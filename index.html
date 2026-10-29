@@ -86,6 +86,14 @@
             padding: 6px 12px;
             width: auto;
         }
+        .btn-edit {
+            background: #2563eb;
+            font-size: 11px;
+            padding: 3px 8px;
+            width: auto;
+            margin-left: 6px;
+            border-radius: 4px;
+        }
         
         /* 播放器容器 */
         .player-wrapper { 
@@ -130,7 +138,6 @@
             animation-play-state: paused; 
             margin-bottom: 12px;
         }
-        /* 黑胶唱片中心：支持显示动态歌曲专辑封面 */
         .vinyl-center { 
             width: 54px; 
             height: 54px; 
@@ -290,17 +297,18 @@
     <!-- 1. 专属加密连接面板 -->
     <div class="card">
         <div class="status">
-            你的私密配对码 (点击复制): 
-            <span id="myId" class="badge" title="点击即可复制">正在建立安全信道...</span>
-            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 DTLS 端到端硬件级加密传输 · 防偷听密室</div>
+            你的专属固定码 (点击复制): 
+            <span id="myId" class="badge" title="点击即可复制">正在注册固定专属信道...</span>
+            <button id="editIdBtn" class="btn-edit" title="自定义你的专属名称">✏️ 改名</button>
+            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 专属永久固定码 · 刷新网页不改变 · 自动重连</div>
         </div>
         <div class="row-btn">
             <button id="copyRoomLinkBtn" class="btn-sub">🔗 复制专属房间链接（发给对方一键进入）</button>
             <button id="resetConnBtn" class="btn-danger" title="重置当前连接状态">🔄 重置状态</button>
         </div>
-        <input type="text" id="targetId" placeholder="粘贴对方最新配对码">
+        <input type="text" id="targetId" placeholder="粘贴对方固定专属码">
         <button id="connBtn">进入专属双人密室</button>
-        <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 准备就绪</div>
+        <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 正在初始化...</div>
     </div>
 
     <!-- 2. 音视频源加载面板 -->
@@ -373,6 +381,7 @@
     let receivedChunks = [], receivedBytes = 0, expectedFileSize = 0, fileMeta = null;
 
     const myIdEl = document.getElementById('myId');
+    const editIdBtn = document.getElementById('editIdBtn');
     const copyRoomLinkBtn = document.getElementById('copyRoomLinkBtn');
     const resetConnBtn = document.getElementById('resetConnBtn');
     const targetIdEl = document.getElementById('targetId');
@@ -400,47 +409,109 @@
     const volSlider = document.getElementById('volSlider');
     const volIcon = document.getElementById('volIcon');
 
-    // 1. 初始化 PeerJS
-    peer = new Peer({
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.miwifi.com:3478' },
-                { urls: 'stun:stun.chat.bilibili.com:3478' },
-                { urls: 'stun:stun.cloudflare.com:3478' },
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
+    // 核心优化 1：生成或获取本地永久固化的专属 ID
+    function getPermanentPeerId() {
+        let savedId = localStorage.getItem('syncdrop_permanent_id');
+        if (!savedId) {
+            // 首次生成一个简短好记的专属码，格式如：sd-8a2f5c
+            savedId = 'sd-' + Math.random().toString(36).substring(2, 8);
+            localStorage.setItem('syncdrop_permanent_id', savedId);
+        }
+        return savedId;
+    }
+
+    let myPermanentId = getPermanentPeerId();
+
+    // 允许用户自定义专属名称
+    editIdBtn.onclick = () => {
+        const input = prompt("请输入你想设置的固定专属码（仅限英文字母、数字和减号，如 tom520）：", myPermanentId);
+        if (input) {
+            const clean = input.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+            if (clean.length < 3) return alert("专属码至少需要 3 个字符！");
+            localStorage.setItem('syncdrop_permanent_id', clean);
+            // 刷新生效
+            window.location.reload();
+        }
+    };
+
+    // 核心优化 2：刷新或关闭前主动向公共信令注销，防止“名字被占”
+    window.addEventListener('beforeunload', () => {
+        if (peer) {
+            peer.destroy();
         }
     });
 
-    peer.on('open', id => {
-        myIdEl.innerText = id;
-        connStatusEl.innerText = "状态: 安全信道就绪，等待配对";
-        connStatusEl.style.color = "#aaa";
-    });
-
-    peer.on('error', err => {
-        console.error("PeerJS 异常:", err);
-        clearTimeout(connectTimeoutTimer);
-        connStatusEl.style.color = "#ff5252";
-        if (err.type === 'peer-unavailable') {
-            connStatusEl.innerText = "❌ 找不到对方配对码：对方可能已刷新网页，请让对方重新复制最新码！";
-        } else {
-            connStatusEl.innerText = "❌ 异常: " + err.type;
+    // 核心优化 3：初始化绑定固定 ID 的 PeerJS
+    function initPeerEngine() {
+        if (peer) {
+            try { peer.destroy(); } catch(e) {}
         }
-        connBtn.disabled = false;
-    });
 
-    // 2. 被动接收连接
-    peer.on('connection', incomingConn => {
-        if (conn && conn.open && conn.peer !== incomingConn.peer) {
-            console.warn("🔒 检测到第三方尝试接入，防偷听密室已自动拦截！");
-            incomingConn.close();
-            return;
-        }
-        closeExistingConnection();
-        conn = incomingConn;
-        bindConnEvents();
-    });
+        peer = new Peer(myPermanentId, {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.miwifi.com:3478' },
+                    { urls: 'stun:stun.chat.bilibili.com:3478' },
+                    { urls: 'stun:stun.cloudflare.com:3478' },
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            }
+        });
+
+        peer.on('open', id => {
+            myPermanentId = id;
+            myIdEl.innerText = id;
+            connStatusEl.innerText = "状态: 安全信道就绪（专属固定码已生效）";
+            connStatusEl.style.color = "#aaa";
+
+            // 核心优化 4：刷新后自动检测历史连接目标，无感秒级重连！
+            const lastTarget = localStorage.getItem('syncdrop_last_peer');
+            if (lastTarget && lastTarget !== id) {
+                targetIdEl.value = lastTarget;
+                connStatusEl.innerText = `⏳ 检测到上次的小伙伴【${lastTarget}】，正在自动恢复连接...`;
+                setTimeout(() => {
+                    connectToPeer(lastTarget);
+                }, 800);
+            }
+        });
+
+        peer.on('error', err => {
+            console.error("PeerJS 异常:", err);
+            clearTimeout(connectTimeoutTimer);
+            connStatusEl.style.color = "#ff5252";
+
+            // 如果遇到刚刚 F5 刷新导致 ID 还没被旧连接释放
+            if (err.type === 'unavailable-id') {
+                connStatusEl.innerText = "⏳ 正在平滑接管你的固定专属码，1.5 秒后自动就绪...";
+                setTimeout(() => {
+                    initPeerEngine();
+                }, 1500);
+                return;
+            }
+
+            if (err.type === 'peer-unavailable') {
+                connStatusEl.innerText = "❌ 对方当前未在线，等待对方打开网页...";
+            } else {
+                connStatusEl.innerText = "❌ 异常: " + err.type;
+            }
+            connBtn.disabled = false;
+        });
+
+        peer.on('connection', incomingConn => {
+            if (conn && conn.open && conn.peer !== incomingConn.peer) {
+                console.warn("🔒 检测到第三方尝试接入，防偷听密室已自动拦截！");
+                incomingConn.close();
+                return;
+            }
+            closeExistingConnection();
+            conn = incomingConn;
+            localStorage.setItem('syncdrop_last_peer', incomingConn.peer);
+            targetIdEl.value = incomingConn.peer;
+            bindConnEvents();
+        });
+    }
+
+    initPeerEngine();
 
     function closeExistingConnection() {
         if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
@@ -454,17 +525,17 @@
         closeExistingConnection();
         localStorage.removeItem('syncdrop_last_peer');
         targetIdEl.value = "";
-        connStatusEl.innerText = "状态: 已完全重置，请粘贴新的配对码重新连接";
+        connStatusEl.innerText = "状态: 已完全重置，可重新连接其他小伙伴";
         connStatusEl.style.color = "#aaa";
         connBtn.disabled = false;
-        alert("已重置连接状态！");
+        alert("已重置连接记忆！");
     };
 
-    myIdEl.onclick = () => copyText(myIdEl.innerText, "已复制配对码！");
+    myIdEl.onclick = () => copyText(myIdEl.innerText, "已复制固定配对码！");
 
     copyRoomLinkBtn.onclick = () => {
-        const roomUrl = `${window.location.origin}${window.location.pathname}?connect=${myIdEl.innerText}`;
-        copyText(roomUrl, "已复制专属房间链接！直接发给对方，打开即可自动配对。");
+        const roomUrl = `${window.location.origin}${window.location.pathname}?connect=${myPermanentId}`;
+        copyText(roomUrl, "已复制专属房间链接！直接发给对方打开，永远无需再次配对。");
     };
 
     function copyText(text, msg) {
@@ -476,18 +547,16 @@
 
     connBtn.onclick = () => {
         const dest = targetIdEl.value.trim();
-        if (!dest) return alert("请先粘贴对方配对码！");
+        if (!dest) return alert("请先输入对方固定专属码！");
         connectToPeer(dest);
     };
 
     function connectToPeer(destId) {
-        if (destId === myIdEl.innerText) {
-            return alert("不能连接自己的配对码！请将代码发给另一台设备。");
-        }
+        if (destId === myPermanentId) return;
 
         closeExistingConnection();
         connBtn.disabled = true;
-        connStatusEl.innerText = "⏳ 正在建立双人加密隧道，请稍候...";
+        connStatusEl.innerText = `⏳ 正在连接【${destId}】，请稍候...`;
         connStatusEl.style.color = "#ff9800";
 
         conn = peer.connect(destId, { reliable: true });
@@ -496,28 +565,33 @@
         connectTimeoutTimer = setTimeout(() => {
             if (!conn || !conn.open) {
                 closeExistingConnection();
-                connStatusEl.innerText = "❌ 连接超时：未能穿透成功。对方配对码可能失效，请让对方重新复制最新码！";
-                connStatusEl.style.color = "#ff5252";
+                connStatusEl.innerText = `⏳ 未能连通【${destId}】，可能对方暂时退出了网页，待对方上线后会自动连通。`;
+                connStatusEl.style.color = "#ff9800";
                 connBtn.disabled = false;
             }
         }, 10000);
     }
 
-    if (autoTarget) setTimeout(() => connectToPeer(autoTarget), 800);
+    if (autoTarget && autoTarget !== myPermanentId) {
+        localStorage.setItem('syncdrop_last_peer', autoTarget);
+        targetIdEl.value = autoTarget;
+        setTimeout(() => connectToPeer(autoTarget), 1000);
+    }
 
-    // 3. 通信管道绑定
+    // 绑定通道数据接收
     function bindConnEvents() {
         if (!conn) return;
 
         conn.on('open', () => {
             clearTimeout(connectTimeoutTimer);
             connBtn.disabled = false;
-            connStatusEl.innerText = "🔒 专属密室已锁死：仅限你们两人，防偷听已生效";
+            localStorage.setItem('syncdrop_last_peer', conn.peer);
+            connStatusEl.innerText = `🔒 已与【${conn.peer}】锁定双人专属密室（防偷听已生效）`;
             connStatusEl.style.color = "#00c853";
         });
 
         conn.on('close', () => {
-            connStatusEl.innerText = "⚠️ 对方已离开房间或断开";
+            connStatusEl.innerText = "⚠️ 对方已暂时离开房间";
             connStatusEl.style.color = "#ff5252";
             connBtn.disabled = false;
         });
@@ -571,7 +645,6 @@
         });
     }
 
-    // 4. UI 模式切换（含黑胶唱片专辑封面贴图）
     function setUIMode(audioMode, title = "正在同步收听音频...", pic = "") {
         isAudioMode = audioMode;
         if (audioMode) {
@@ -596,7 +669,6 @@
         return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    // 5. 音乐控制栏交互
     musicPlayBtn.onclick = () => {
         if (player.paused) {
             player.play().catch(() => alert("请先点击屏幕任意位置解除浏览器静音限制"));
@@ -622,7 +694,6 @@
         volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
     };
 
-    // 6. 播放器全局事件监听
     player.addEventListener('play', () => {
         vinyl.style.animationPlayState = 'running';
         musicPlayBtn.innerText = "⏸";
@@ -661,7 +732,6 @@
         }
     }
 
-    // 7. 全网音乐元数据与单曲智能嗅探引擎 (网易云 + QQ + 酷狗 + 酷我 + 纯文字搜歌)
     async function fetchMetingSong(server, id) {
         try {
             const res = await fetch(`https://api.injahow.cn/meting/?server=${server}&type=song&id=${id}`, {
@@ -707,7 +777,6 @@
     async function universalMediaParser(input, forceAudio = false) {
         let text = input.trim();
 
-        // 模式 A：纯文字点歌（若输入的内容不是 http/https 开头的链接）
         if (!text.startsWith('http://') && !text.startsWith('https://')) {
             connStatusEl.innerText = `🔍 正在全网检索歌曲【${text}】...`;
             const searchResult = await searchMusicByKeyword(text);
@@ -716,7 +785,6 @@
             }
         }
 
-        // 模式 B：网易云音乐链接解析 (获取真实歌名、歌手与专辑封面)
         const neteaseMatch = text.match(/id=(\d+)/);
         if (text.includes('163.com') && neteaseMatch) {
             const id = neteaseMatch[1];
@@ -730,7 +798,6 @@
             };
         }
 
-        // 模式 C：QQ 音乐链接解析
         if (text.includes('qq.com')) {
             const midMatch = text.match(/songDetail\/([a-zA-Z0-9]+)/) || text.match(/songmid=([a-zA-Z0-9]+)/);
             if (midMatch) {
@@ -746,7 +813,6 @@
             }
         }
 
-        // 模式 D：酷我音乐链接解析
         if (text.includes('kuwo.cn')) {
             const kuwoMatch = text.match(/(?:play_detail|yinyue)\/(\d+)/);
             if (kuwoMatch) {
@@ -762,7 +828,6 @@
             }
         }
 
-        // 模式 E：酷狗音乐链接解析
         if (text.includes('kugou.com')) {
             const hashMatch = text.match(/hash=([a-zA-Z0-9]{32})/i) || text.match(/([a-zA-Z0-9]{32})/);
             if (hashMatch) {
@@ -778,7 +843,6 @@
             }
         }
 
-        // 模式 F：常见音频直链后缀识别 (.mp3, .flac, .wav, .m4a, .ogg)
         if (text.match(/\.(mp3|flac|wav|m4a|ogg|aac)($|\?)/i) || forceAudio) {
             const cleanTitle = text.split('/').pop().split('?')[0].replace(/\.[^/.]+$/, "");
             return {
@@ -789,7 +853,6 @@
             };
         }
 
-        // 模式 G：视频网页智能嗅探 (.m3u8)
         if (!text.includes('.m3u8') && !text.match(/\.(mp4|webm)($|\?)/i)) {
             connStatusEl.innerText = "🔍 检测到网页链接，正在尝试嗅探隐藏的视频流...";
             const proxyUrls = [
@@ -818,7 +881,6 @@
         return { finalUrl: text, isAudio: forceAudio, title: "在线媒体", pic: '' };
     }
 
-    // 应用音视频流到播放器
     function applyMediaSource(finalUrl, isAudio, title, pic) {
         setUIMode(isAudio, title, pic);
 
@@ -870,7 +932,6 @@
         loadUrlBtn.innerText = "解析/全网搜歌并同步播放";
     };
 
-    // 8. 本地大文件分块直传
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
