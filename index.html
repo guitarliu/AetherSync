@@ -6,8 +6,12 @@
     <title>SyncDrop - 异地原画影音私密同步</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧🐱</text></svg>">
     
+    <!-- 引入 PeerJS (WebRTC P2P 直连) -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- 引入 Hls.js (支持播放在线 m3u8 切片流媒体) -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <!-- 引入 YouTube 官方 IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -151,6 +155,12 @@
             max-height: 55vh; 
             display: block; 
             outline: none;
+        }
+        #ytPlayerContainer {
+            width: 100%;
+            height: 450px;
+            max-height: 55vh;
+            display: none;
         }
         
         .music-view { 
@@ -335,18 +345,18 @@
         <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 正在初始化...</div>
     </div>
 
-    <!-- 2. 音视频源加载面板 -->
+    <!-- 2. 音视频源加载面板（全能支持：YouTube / X / 影视站 / 音乐 / 本地） -->
     <div class="card">
         <div class="tabs-nav">
-            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">🎬 在线影视 / 网页嗅探</button>
+            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">🎬 全网影视 / 油管 / X(Twitter)</button>
             <button class="tab-btn tab-music" onclick="switchTab('tabMusic')">🎧 全网音乐 / 搜歌点歌</button>
             <button class="tab-btn tab-file" onclick="switchTab('tabFile')">📁 本地原画大文件直传</button>
         </div>
 
         <div id="tabVideo" class="tab-content active">
-            <div class="tab-desc">💡 支持在线电影/电视剧播放网页（自动嗅探）、各类在线 <b>.m3u8</b> 流媒体切片直链，或 <b>.mp4</b> 高清直链。</div>
-            <input type="text" id="videoUrlInput" placeholder="粘贴影视站播放网页地址、.m3u8 视频流 或 .mp4 直链">
-            <button id="loadVideoBtn" style="background: #2563eb;">🚀 嗅探并两端同步播放该影视</button>
+            <div class="tab-desc">💡 支持 <b>YouTube (油管)</b> 视频、<b>X (Twitter)</b> 推文视频、在线影视网页嗅探、<b>.m3u8</b> 流媒体切片及 <b>.mp4</b> 直链。</div>
+            <input type="text" id="videoUrlInput" placeholder="输入：YouTube链接、X(Twitter)推文地址、影视站网页或直链">
+            <button id="loadVideoBtn" style="background: #2563eb;">🚀 智能解析并两端同步播放</button>
         </div>
 
         <div id="tabMusic" class="tab-content">
@@ -369,11 +379,18 @@
         </div>
     </div>
 
-    <!-- 3. 双模播放器 -->
+    <!-- 3. 三模自适应播放器（原生视频 / YouTube 官方 IFrame / 黑胶唱片模式） -->
     <div class="card" style="padding: 10px;">
         <div class="player-wrapper">
+            <!-- 原生 HTML5 视频播放器 (用于 X / 影视站 / 本地电影) -->
             <video id="player" controls playsinline webkit-playsinline></video>
             
+            <!-- YouTube 官方播放器容器 -->
+            <div id="ytPlayerContainer">
+                <div id="ytPlayer"></div>
+            </div>
+
+            <!-- 音乐黑胶唱片控制台 -->
             <div id="musicView" class="music-view">
                 <div class="vinyl" id="vinyl"><div class="vinyl-center" id="vinylCenter"></div></div>
                 <div class="music-title" id="musicTitle">正在播放音频...</div>
@@ -399,13 +416,12 @@
 
 <script>
     const CHUNK_SIZE = 32 * 1024;
-    let peer = null, conn = null, hls = null;
+    let peer = null, conn = null, hls = null, ytPlayer = null;
     let isRemoteAction = false;
-    let isAudioMode = false;
     let isUserSeeking = false;
     let connectTimeoutTimer = null;
     let heartbeatInterval = null;
-    let retryConnectCount = 0; // 重试计数器
+    let retryConnectCount = 0;
 
     let receivedChunks = [], receivedBytes = 0, expectedFileSize = 0, fileMeta = null;
 
@@ -423,6 +439,7 @@
     const fileInput = document.getElementById('fileInput');
 
     const player = document.getElementById('player');
+    const ytPlayerContainer = document.getElementById('ytPlayerContainer');
     const progressBox = document.getElementById('progressBox');
     const barFill = document.getElementById('barFill');
     const transPercent = document.getElementById('transPercent');
@@ -476,7 +493,7 @@
         }
     });
 
-    // 核心改进：加固 PeerJS 初始化与保活心跳
+    // 1. PeerJS 初始化与心跳保活
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -487,7 +504,7 @@
             host: '0.peerjs.com',
             secure: true,
             port: 443,
-            pingInterval: 5000, // 5秒主动心跳保活
+            pingInterval: 5000,
             config: {
                 iceServers: [
                     { urls: 'stun:stun.miwifi.com:3478' },
@@ -503,8 +520,6 @@
             myIdEl.innerText = id;
             connStatusEl.innerText = "状态: 配对信道就绪，等待连接";
             connStatusEl.style.color = "#aaa";
-
-            // 启动定时防掉线心跳检测
             startHeartbeat();
 
             const lastTarget = sessionStorage.getItem('syncdrop_tab_last_target');
@@ -515,11 +530,8 @@
             }
         });
 
-        // 断线自动重新连回信令服务器
         peer.on('disconnected', () => {
             console.warn("信令连接断开，正在自动重新连回信令池...");
-            connStatusEl.innerText = "⚠️ 信令闪断，正在自动唤醒重新连接...";
-            connStatusEl.style.color = "#ff9800";
             peer.reconnect();
         });
 
@@ -534,7 +546,6 @@
                 return;
             }
 
-            // 核心修复：如果是对方未找到，支持自动重试探测（给信令节点 2 秒同步时间）
             if (err.type === 'peer-unavailable') {
                 const target = targetIdEl.value.trim();
                 if (retryConnectCount < 2 && target) {
@@ -545,7 +556,7 @@
                     return;
                 }
                 retryConnectCount = 0;
-                connStatusEl.innerText = "❌ 对方当前未在线，请确认对方页面已打开并在前台";
+                connStatusEl.innerText = "❌ 对方当前未在线，请确认对方页面已打开";
                 connStatusEl.style.color = "#ff5252";
             } else {
                 connStatusEl.innerText = "❌ 异常: " + err.type;
@@ -568,7 +579,6 @@
         });
     }
 
-    // 主动心跳保活机制
     function startHeartbeat() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         heartbeatInterval = setInterval(() => {
@@ -677,6 +687,7 @@
         });
 
         conn.on('data', data => {
+            // A. 原生播放器指令同步
             if (data.type === 'sync') {
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
@@ -686,9 +697,28 @@
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
-            else if (data.type === 'load-url') {
-                applyMediaSource(data.url, data.isAudio, data.title, data.pic);
+            // B. YouTube 专属同步指令
+            else if (data.type === 'yt-sync') {
+                isRemoteAction = true;
+                if (ytPlayer && ytPlayer.getPlayerState) {
+                    const currentTime = ytPlayer.getCurrentTime();
+                    if (Math.abs(currentTime - data.time) > 0.5) {
+                        ytPlayer.seekTo(data.time, true);
+                    }
+                    if (data.action === 'play') ytPlayer.playVideo();
+                    if (data.action === 'pause') ytPlayer.pauseVideo();
+                }
+                setTimeout(() => isRemoteAction = false, 200);
             }
+            // C. 载入媒体源同步
+            else if (data.type === 'load-url') {
+                if (data.mediaType === 'youtube') {
+                    loadYouTubeVideo(data.url, false);
+                } else {
+                    applyMediaSource(data.url, data.isAudio, data.title, data.pic);
+                }
+            }
+            // D. 本地大文件传输切片
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 expectedFileSize = data.size;
@@ -708,7 +738,7 @@
                     transStatus.innerText = "🎉 传输完成！双方均已加载";
                     const isAudio = fileMeta.mime.startsWith('audio');
                     const cleanName = fileMeta.name.replace(/\.[^/.]+$/, "");
-                    setUIMode(isAudio, cleanName, '');
+                    setUIMode(isAudio ? 'audio' : 'video', cleanName, '');
                     const blob = new Blob(receivedChunks, { type: fileMeta.mime });
                     player.src = URL.createObjectURL(blob);
                     receivedChunks = [];
@@ -717,20 +747,27 @@
         });
     }
 
-    function setUIMode(audioMode, title = "正在同步收听音频...", pic = "") {
-        isAudioMode = audioMode;
-        if (audioMode) {
+    // 2. 模式切换器：video (HTML5视频) / audio (黑胶唱片) / youtube (YouTube专用)
+    function setUIMode(mode, title = "正在播放...", pic = "") {
+        // 暂停其他可能在播放的源
+        if (mode !== 'video' && player) player.pause();
+        if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+
+        if (mode === 'youtube') {
             player.style.display = 'none';
+            musicView.style.display = 'none';
+            ytPlayerContainer.style.display = 'block';
+        } else if (mode === 'audio') {
+            player.style.display = 'none';
+            ytPlayerContainer.style.display = 'none';
             musicView.style.display = 'flex';
             musicTitle.innerText = "🎵 " + title;
-            if (pic) {
-                vinylCenter.style.backgroundImage = `url('${pic}')`;
-            } else {
-                vinylCenter.style.backgroundImage = 'none';
-            }
+            vinylCenter.style.backgroundImage = pic ? `url('${pic}')` : 'none';
         } else {
-            player.style.display = 'block';
+            // video 原生视频模式
+            ytPlayerContainer.style.display = 'none';
             musicView.style.display = 'none';
+            player.style.display = 'block';
         }
     }
 
@@ -741,76 +778,121 @@
         return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    musicPlayBtn.onclick = () => {
-        if (player.paused) {
-            player.play().catch(() => alert("请先点击屏幕任意位置解除浏览器静音限制"));
+    // 3. YouTube 播放器与同步逻辑
+    function extractYouTubeId(url) {
+        const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+        return match ? match[1] : null;
+    }
+
+    function loadYouTubeVideo(videoId, broadcast = true) {
+        setUIMode('youtube');
+
+        if (ytPlayer && ytPlayer.loadVideoById) {
+            ytPlayer.loadVideoById(videoId);
         } else {
-            player.pause();
+            ytPlayer = new YT.Player('ytPlayer', {
+                width: '100%',
+                height: '100%',
+                videoId: videoId,
+                playerVars: {
+                    'playsinline': 1,
+                    'controls': 1,
+                    'autoplay': 1
+                },
+                events: {
+                    'onStateChange': onYouTubeStateChange
+                }
+            });
         }
-    };
 
-    musicProgress.oninput = () => {
-        isUserSeeking = true;
-        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
-        currentTimeText.innerText = formatTime(seekTime);
-    };
-
-    musicProgress.onchange = () => {
-        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
-        player.currentTime = seekTime;
-        isUserSeeking = false;
-    };
-
-    volSlider.oninput = () => {
-        player.volume = volSlider.value;
-        volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
-    };
-
-    player.addEventListener('play', () => {
-        vinyl.style.animationPlayState = 'running';
-        musicPlayBtn.innerText = "⏸";
-        sendSync('play');
-    });
-
-    player.addEventListener('pause', () => {
-        vinyl.style.animationPlayState = 'paused';
-        musicPlayBtn.innerText = "▶";
-        sendSync('pause');
-    });
-
-    player.addEventListener('timeupdate', () => {
-        if (!isUserSeeking && player.duration) {
-            currentTimeText.innerText = formatTime(player.currentTime);
-            musicProgress.value = (player.currentTime / player.duration) * 100;
-        }
-    });
-
-    player.addEventListener('durationchange', () => {
-        durationText.innerText = formatTime(player.duration);
-    });
-
-    player.addEventListener('seeked', () => {
-        currentTimeText.innerText = formatTime(player.currentTime);
-        sendSync('seek');
-    });
-
-    function sendSync(action) {
-        if (conn && conn.open && !isRemoteAction) {
+        if (broadcast && conn && conn.open) {
             conn.send({
-                type: 'sync',
-                action: action,
-                time: player.currentTime
+                type: 'load-url',
+                mediaType: 'youtube',
+                url: videoId
             });
         }
     }
 
+    function onYouTubeStateChange(event) {
+        if (isRemoteAction) return;
+
+        // YT.PlayerState.PLAYING = 1, PAUSED = 2
+        if (event.data === 1) {
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'yt-sync',
+                    action: 'play',
+                    time: ytPlayer.getCurrentTime()
+                });
+            }
+        } else if (event.data === 2) {
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'yt-sync',
+                    action: 'pause',
+                    time: ytPlayer.getCurrentTime()
+                });
+            }
+        }
+    }
+
+    // 4. X (Twitter) 推文视频智能嗅探 (调用 FxTwitter / VxTwitter 开放接口)
+    async function extractXVideo(url) {
+        const tweetMatch = url.match(/status\/(\d+)/);
+        if (!tweetMatch) return null;
+
+        const tweetId = tweetMatch[1];
+        connStatusEl.innerText = "🔍 正在解析 X(Twitter) 原画视频流...";
+        connStatusEl.style.color = "#ff9800";
+
+        try {
+            // A. 首选用 api.fxtwitter.com 提取推文媒体
+            const res = await fetch(`https://api.fxtwitter.com/status/${tweetId}`, { signal: AbortSignal.timeout(5000) });
+            const data = await res.json();
+            if (data.tweet && data.tweet.media && data.tweet.media.videos && data.tweet.media.videos.length > 0) {
+                return data.tweet.media.videos[0].url;
+            }
+        } catch(e) {
+            console.warn("FxTwitter 解析失败，尝试备用接口...", e);
+        }
+
+        try {
+            // B. 备用 api.vxtwitter.com 提取
+            const res2 = await fetch(`https://api.vxtwitter.com/Twitter/status/${tweetId}`, { signal: AbortSignal.timeout(5000) });
+            const data2 = await res2.json();
+            if (data2.media_urls && data2.media_urls.length > 0) {
+                return data2.media_urls[0];
+            }
+        } catch(e) {}
+
+        return null;
+    }
+
+    // 5. 影视站与普通网页切片嗅探
     async function extractAndParseVideo(inputUrl) {
         const url = inputUrl.trim();
 
-        if (url.includes('.m3u8') || url.match(/\.(mp4|webm|flv)($|\?)/i)) {
-            return { finalUrl: url, isAudio: false, title: "在线视频" };
+        // A. 判定是否为 YouTube 视频
+        const ytId = extractYouTubeId(url);
+        if (ytId) {
+            return { type: 'youtube', videoId: ytId };
         }
 
+        // B. 判定是否为 X (Twitter) 视频
+        if (url.includes('twitter.com') || url.includes('x.com')) {
+            const xVideoUrl = await extractXVideo(url);
+            if (xVideoUrl) {
+                return { type: 'direct', finalUrl: xVideoUrl, title: "X (Twitter) 视频" };
+            }
+        }
+
+        // C. 标准 m3u8 切片或直接 MP4
+        if (url.includes('.m3u8') || url.match(/\.(mp4|webm|flv)($|\?)/i)) {
+            return { type: 'direct', finalUrl: url, title: "在线视频" };
+        }
+
+        // D. 影视站网页源码穿透嗅探
         connStatusEl.innerText = "🔍 正在穿透并嗅探该影视网页中的真实视频流...";
         connStatusEl.style.color = "#ff9800";
 
@@ -829,21 +911,22 @@
                     try {
                         const parsed = JSON.parse(jsonMatch[1]);
                         if (parsed.url && parsed.url.startsWith('http')) {
-                            return { finalUrl: parsed.url.replace(/\\/g, ''), isAudio: false, title: "网页解析视频" };
+                            return { type: 'direct', finalUrl: parsed.url.replace(/\\/g, ''), title: "网页解析视频" };
                         }
                     } catch(e) {}
                 }
 
                 const m3u8Match = html.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/i);
                 if (m3u8Match) {
-                    return { finalUrl: m3u8Match[0].replace(/\\/g, ''), isAudio: false, title: "网页解析视频" };
+                    return { type: 'direct', finalUrl: m3u8Match[0].replace(/\\/g, ''), title: "网页解析视频" };
                 }
             } catch (err) {}
         }
 
-        return { finalUrl: url, isAudio: false, title: "在线影视" };
+        return { type: 'direct', finalUrl: url, title: "在线影视" };
     }
 
+    // 6. 音乐解析引擎
     async function fetchMetingSong(server, id) {
         try {
             const res = await fetch(`https://api.injahow.cn/meting/?server=${server}&type=song&id=${id}`, {
@@ -851,14 +934,7 @@
             });
             const data = await res.json();
             const song = Array.isArray(data) ? data[0] : data;
-            if (song) {
-                return {
-                    name: song.name,
-                    artist: song.artist,
-                    pic: song.pic,
-                    url: song.url
-                };
-            }
+            if (song) return { name: song.name, artist: song.artist, pic: song.pic, url: song.url };
         } catch(e) {}
         return null;
     }
@@ -960,8 +1036,9 @@
         };
     }
 
+    // 7. 渲染直链媒体源
     function applyMediaSource(finalUrl, isAudio, title, pic) {
-        setUIMode(isAudio, title, pic);
+        setUIMode(isAudio ? 'audio' : 'video', title, pic);
 
         if (finalUrl.includes('.m3u8')) {
             if (Hls.isSupported()) {
@@ -978,30 +1055,37 @@
         }
     }
 
+    // 点击播放视频 / YouTube / X
     loadVideoBtn.onclick = async () => {
         const raw = videoUrlInput.value.trim();
-        if (!raw) return alert("请先粘贴影视网页或视频直链！");
+        if (!raw) return alert("请先输入视频链接！");
 
         loadVideoBtn.disabled = true;
-        loadVideoBtn.innerText = "⏳ 正在嗅探/载入视频...";
+        loadVideoBtn.innerText = "⏳ 正在解析并分发...";
 
-        const result = await extractAndParseVideo(raw);
-        applyMediaSource(result.finalUrl, false, result.title, '');
+        const parsed = await extractAndParseVideo(raw);
 
-        if (conn && conn.open) {
-            conn.send({
-                type: 'load-url',
-                url: result.finalUrl,
-                isAudio: false,
-                title: result.title,
-                pic: ''
-            });
+        if (parsed.type === 'youtube') {
+            loadYouTubeVideo(parsed.videoId, true);
+        } else {
+            applyMediaSource(parsed.finalUrl, false, parsed.title, '');
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'load-url',
+                    mediaType: 'direct',
+                    url: parsed.finalUrl,
+                    isAudio: false,
+                    title: parsed.title,
+                    pic: ''
+                });
+            }
         }
 
         loadVideoBtn.disabled = false;
-        loadVideoBtn.innerText = "🚀 嗅探并两端同步播放该影视";
+        loadVideoBtn.innerText = "🚀 智能解析并两端同步播放";
     };
 
+    // 点击播放音乐
     loadMusicBtn.onclick = async () => {
         const raw = musicUrlInput.value.trim();
         if (!raw) return alert("请输入歌名或音乐链接！");
@@ -1023,6 +1107,7 @@
         if (conn && conn.open) {
             conn.send({
                 type: 'load-url',
+                mediaType: 'direct',
                 url: result.finalUrl,
                 isAudio: true,
                 title: result.title,
@@ -1034,6 +1119,72 @@
         loadMusicBtn.innerText = "🎶 全网搜歌/解析并同步听歌";
     };
 
+    // 8. 音乐面板专属控制按键
+    musicPlayBtn.onclick = () => {
+        if (player.paused) {
+            player.play().catch(() => alert("请先点击屏幕任意位置解除浏览器静音限制"));
+        } else {
+            player.pause();
+        }
+    };
+
+    musicProgress.oninput = () => {
+        isUserSeeking = true;
+        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
+        currentTimeText.innerText = formatTime(seekTime);
+    };
+
+    musicProgress.onchange = () => {
+        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
+        player.currentTime = seekTime;
+        isUserSeeking = false;
+    };
+
+    volSlider.oninput = () => {
+        player.volume = volSlider.value;
+        volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
+    };
+
+    // 9. 原生播放器事件监听与广播
+    player.addEventListener('play', () => {
+        vinyl.style.animationPlayState = 'running';
+        musicPlayBtn.innerText = "⏸";
+        sendSync('play');
+    });
+
+    player.addEventListener('pause', () => {
+        vinyl.style.animationPlayState = 'paused';
+        musicPlayBtn.innerText = "▶";
+        sendSync('pause');
+    });
+
+    player.addEventListener('timeupdate', () => {
+        if (!isUserSeeking && player.duration) {
+            currentTimeText.innerText = formatTime(player.currentTime);
+            musicProgress.value = (player.currentTime / player.duration) * 100;
+        }
+    });
+
+    player.addEventListener('durationchange', () => {
+        durationText.innerText = formatTime(player.duration);
+    });
+
+    player.addEventListener('seeked', () => {
+        currentTimeText.innerText = formatTime(player.currentTime);
+        sendSync('seek');
+    });
+
+    function sendSync(action) {
+        if (conn && conn.open && !isRemoteAction) {
+            conn.send({
+                type: 'sync',
+                action: action,
+                time: player.currentTime
+            });
+        }
+    }
+
+    // 10. 本地文件原画 P2P 直传
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
@@ -1043,7 +1194,7 @@
 
         const isAudio = file.type.startsWith('audio') || file.name.match(/\.(mp3|flac|wav|m4a|aac)$/i);
         const cleanName = file.name.replace(/\.[^/.]+$/, "");
-        setUIMode(isAudio, cleanName, '');
+        setUIMode(isAudio ? 'audio' : 'video', cleanName, '');
         player.src = URL.createObjectURL(file);
 
         conn.send({
