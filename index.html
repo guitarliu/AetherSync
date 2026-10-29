@@ -3,44 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SyncDrop - 异地P2P原画影音同步</title>
+    <title>SyncDrop - 异地原画影院</title>
+    <!-- 引入 PeerJS (WebRTC P2P) -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- 引入 Hls.js 支持主流 m3u8 在线切片流媒体 -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #e0e0e0; padding: 15px; }
-        .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         h2 { font-size: 1.2rem; margin-bottom: 10px; color: #4facfe; text-align: center; }
-        input[type="text"], button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 8px; border: 1px solid #333; font-size: 14px; }
+        input[type="text"], button { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #333; font-size: 14px; }
         input[type="text"] { background: #2a2a2a; color: #fff; }
         button { background: #0070f3; color: #fff; font-weight: bold; cursor: pointer; border: none; }
         button:active { filter: brightness(0.85); }
-        .copy-btn { background: #374151; font-size: 12px; padding: 5px 10px; width: auto; margin-left: 8px; }
+        .row-btn { display: flex; gap: 8px; }
+        .btn-sub { background: #374151; font-size: 12px; }
         video { width: 100%; max-height: 55vh; background: #000; border-radius: 8px; margin-top: 10px; display: block; }
         .progress-box { margin: 10px 0; display: none; }
-        .bar-bg { background: #333; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 5px; }
+        .bar-bg { background: #333; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 5px; }
         .bar-fill { background: #00c853; height: 100%; width: 0%; transition: width 0.1s; }
         .status { font-size: 13px; color: #aaa; text-align: center; margin: 5px 0; word-break: break-all; }
-        .badge { background: #2d3748; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #64b5f6; }
+        .badge { background: #2d3748; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #64b5f6; cursor: pointer; display: inline-block; }
+        .badge:hover { background: #3b4a63; }
+        .tab-title { font-size: 14px; font-weight: bold; color: #ddd; margin-bottom: 6px; }
     </style>
 </head>
 <body>
 
     <h2>🎬 SyncDrop 异地原画影院</h2>
 
+    <!-- 1. 房间与连接面板 -->
     <div class="card">
-        <div class="status" style="margin-bottom: 10px;">
-            我的连接码: <span id="myId" class="badge">正在连接信令服务器...</span>
-            <button id="copyBtn" class="copy-btn" style="display:none;">复制</button>
+        <div class="status">
+            我的连接码 (点击复制): 
+            <span id="myId" class="badge" title="点击即可复制">正在获取...</span>
         </div>
-        <input type="text" id="targetId" placeholder="粘贴对方发来的连接码">
-        <button id="connBtn">开始连接对方</button>
-        <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold; margin-top: 8px;">状态: 等待操作</div>
+        <div class="row-btn">
+            <button id="copyRoomLinkBtn" class="btn-sub">🔗 复制专属房间链接（推荐发给对方）</button>
+        </div>
+        <input type="text" id="targetId" placeholder="粘贴对方连接码或输入房间名">
+        <button id="connBtn">连接对方</button>
+        <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 正在初始化...</div>
     </div>
 
+    <!-- 2. 片源切换面板 (支持本地与在线流) -->
     <div class="card">
-        <label style="font-size: 14px; font-weight: bold;">发片方选择本地文件：</label>
-        <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 8px;">
+        <div class="tab-title">📺 片源选择 (本地文件 或 在线视频直链/m3u8)</div>
         
+        <!-- 在线流地址 -->
+        <input type="text" id="onlineUrl" placeholder="粘贴在线视频直链 (支持 .m3u8 / .mp4)">
+        <button id="loadUrlBtn" style="background: #2e7d32;">两端同步播放该在线视频</button>
+
+        <!-- 本地直传 -->
+        <div style="margin-top: 10px;">
+            <span style="font-size: 12px; color: #aaa;">或者选择本地原画视频直传给对方：</span>
+            <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px;">
+        </div>
+
+        <!-- 传输进度条 -->
         <div class="progress-box" id="progressBox">
             <div style="font-size: 12px; display: flex; justify-content: space-between;">
                 <span id="transStatus">正在传输高清原件...</span>
@@ -50,21 +71,24 @@
         </div>
     </div>
 
+    <!-- 3. 播放器 -->
     <div class="card" style="padding: 10px;">
         <video id="player" controls playsinline webkit-playsinline></video>
     </div>
 
 <script>
     const CHUNK_SIZE = 32 * 1024;
-    let peer = null, conn = null;
+    let peer = null, conn = null, hls = null;
     let isRemoteAction = false;
     let receivedChunks = [], receivedBytes = 0, expectedFileSize = 0, fileMeta = null;
 
     const myIdEl = document.getElementById('myId');
-    const copyBtn = document.getElementById('copyBtn');
+    const copyRoomLinkBtn = document.getElementById('copyRoomLinkBtn');
     const targetIdEl = document.getElementById('targetId');
     const connBtn = document.getElementById('connBtn');
     const connStatusEl = document.getElementById('connStatus');
+    const onlineUrlInput = document.getElementById('onlineUrl');
+    const loadUrlBtn = document.getElementById('loadUrlBtn');
     const fileInput = document.getElementById('fileInput');
     const player = document.getElementById('player');
     const progressBox = document.getElementById('progressBox');
@@ -72,85 +96,119 @@
     const transPercent = document.getElementById('transPercent');
     const transStatus = document.getElementById('transStatus');
 
-    // 升级：使用国内外混合的高可用 STUN 服务器池
+    // 1. 读取 URL Hash 或本地缓存的房间记忆
+    function getRoomFromHash() {
+        const hash = window.location.hash;
+        const match = hash.match(/room=([a-zA-Z0-9_-]+)/);
+        return match ? match[1] : null;
+    }
+
+    let currentRoom = getRoomFromHash() || localStorage.getItem('syncdrop_room');
+    if (!currentRoom) {
+        // 随机生成 6 位简短易读的房间号
+        currentRoom = Math.random().toString(36).substring(2, 8);
+        window.location.hash = `room=${currentRoom}`;
+    }
+    localStorage.setItem('syncdrop_room', currentRoom);
+
+    // 2. 初始化 PeerJS（基于房间命名规则，支持自动重新寻址）
+    // 角色判定：访问 URL 相同房间时，尝试主动寻找房间 Host
     peer = new Peer({
         config: {
             iceServers: [
-                { urls: 'stun:stun.miwifi.com:3478' },         // 小米公共 STUN (国内极快)
-                { urls: 'stun:stun.chat.bilibili.com:3478' }, // B站公共 STUN (国内低延迟)
-                { urls: 'stun:stun.cloudflare.com:3478' },    // Cloudflare 全球 STUN
-                { urls: 'stun:stun.l.google.com:19302' }      // Google 备用 STUN
+                { urls: 'stun:stun.miwifi.com:3478' },
+                { urls: 'stun:stun.chat.bilibili.com:3478' },
+                { urls: 'stun:stun.cloudflare.com:3478' },
+                { urls: 'stun:stun.l.google.com:19302' }
             ]
         }
     });
 
     peer.on('open', id => {
         myIdEl.innerText = id;
-        copyBtn.style.display = 'inline-block';
-        connStatusEl.innerText = "状态: 信令就绪，请复制连接码发给对方";
+        connStatusEl.innerText = "状态: 信令已就绪，房间: " + currentRoom;
         connStatusEl.style.color = "#aaa";
-    });
 
-    // 完备的异常处理
-    peer.on('error', err => {
-        console.error("PeerJS 错误:", err);
-        connStatusEl.style.color = "#ff5252";
-        if (err.type === 'peer-unavailable') {
-            connStatusEl.innerText = "❌ 连接失败：找不到该连接码，对方是否已离线或刷新？";
-        } else if (err.type === 'network') {
-            connStatusEl.innerText = "❌ 网络故障：无法连接公共信令节点，请检查网络。";
-        } else {
-            connStatusEl.innerText = "❌ 发生异常: " + err.type;
+        // 尝试自动恢复最后一次连接的目标
+        const lastTarget = localStorage.getItem('syncdrop_last_peer');
+        if (lastTarget && lastTarget !== id) {
+            targetIdEl.value = lastTarget;
+            // 自动连接上次的伙伴
+            connectToPeer(lastTarget, false);
         }
     });
 
-    copyBtn.onclick = () => {
-        navigator.clipboard.writeText(myIdEl.innerText).then(() => {
-            alert("已成功复制连接码！直接发给对方即可。");
-        }).catch(() => {
-            prompt("复制以下连接码发给对方：", myIdEl.innerText);
-        });
+    // 点击直接复制连接码
+    myIdEl.onclick = () => {
+        copyText(myIdEl.innerText, "已复制连接码！");
     };
+
+    // 一键复制专属房间链接
+    copyRoomLinkBtn.onclick = () => {
+        const roomUrl = `${window.location.origin}${window.location.pathname}?connect=${myIdEl.innerText}#room=${currentRoom}`;
+        copyText(roomUrl, "已复制专属房间链接！发给对方打开即可自动连接。");
+    };
+
+    function copyText(text, successMsg) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert(successMsg);
+        }).catch(() => {
+            prompt("请手动复制：", text);
+        });
+    }
+
+    // 3. 处理自动或手动连接
+    // 检查是否有通过链接带过来的快速连接参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoConnectTarget = urlParams.get('connect');
 
     peer.on('connection', c => {
         conn = c;
+        localStorage.setItem('syncdrop_last_peer', c.peer);
         bindConnEvents();
     });
 
     connBtn.onclick = () => {
         const dest = targetIdEl.value.trim();
-        if (!dest) {
-            alert("请先粘贴对方的连接码！");
-            return;
-        }
-        if (dest === myIdEl.innerText) {
-            alert("不能连接自己的连接码！");
-            return;
-        }
-        connStatusEl.innerText = "⏳ 正在与对方进行 P2P 打洞穿透，请稍候...";
-        connStatusEl.style.color = "#ff9800";
-        conn = peer.connect(dest, { reliable: true });
-        bindConnEvents();
+        if (dest) connectToPeer(dest, true);
     };
+
+    function connectToPeer(destId, showNotice) {
+        if (destId === myIdEl.innerText) return;
+        connStatusEl.innerText = "⏳ 正在与对方进行 P2P 握手...";
+        connStatusEl.style.color = "#ff9800";
+        conn = peer.connect(destId, { reliable: true });
+        localStorage.setItem('syncdrop_last_peer', destId);
+        bindConnEvents();
+    }
+
+    if (autoConnectTarget) {
+        setTimeout(() => connectToPeer(autoConnectTarget, false), 1000);
+    }
 
     function bindConnEvents() {
         conn.on('open', () => {
-            connStatusEl.innerText = "✅ 双方已成功建立 P2P 隧道！可直接选择视频";
+            connStatusEl.innerText = "✅ 双方已成功建立 P2P 隧道！可开始同步观影";
             connStatusEl.style.color = "#00c853";
+
+            // 连接建立后，如果本地有正在播放的在线视频，同步给对方
+            const currentPlayingUrl = localStorage.getItem('syncdrop_last_url');
+            if (currentPlayingUrl && player.src) {
+                conn.send({
+                    type: 'load-url',
+                    url: currentPlayingUrl,
+                    time: player.currentTime
+                });
+            }
         });
 
         conn.on('close', () => {
-            connStatusEl.innerText = "⚠️ P2P 隧道已断开";
-            connStatusEl.style.color = "#ff5252";
-        });
-
-        conn.on('error', (err) => {
-            console.error("连接通道错误:", err);
-            connStatusEl.innerText = "❌ 传输隧道报错";
+            connStatusEl.innerText = "⚠️ 对方已离开或断开";
             connStatusEl.style.color = "#ff5252";
         });
 
         conn.on('data', data => {
+            // A. 同步播放控制
             if (data.type === 'sync') {
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
@@ -160,24 +218,28 @@
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
+            // B. 接收在线视频 URL 同步
+            else if (data.type === 'load-url') {
+                loadVideoUrl(data.url, data.time || 0);
+            }
+            // C. 接收本地原画文件切片
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 expectedFileSize = data.size;
                 receivedBytes = 0;
                 receivedChunks = [];
                 progressBox.style.display = 'block';
-                transStatus.innerText = "对方正在给你传输原画文件，请稍候...";
+                transStatus.innerText = "对方正在给你传输高清原片...";
             }
             else if (data.type === 'file-chunk') {
                 receivedChunks.push(data.chunk);
                 receivedBytes += data.chunk.byteLength;
-                
                 const percent = Math.min(100, Math.round((receivedBytes / expectedFileSize) * 100));
                 barFill.style.width = percent + '%';
                 transPercent.innerText = percent + '%';
 
                 if (receivedBytes >= expectedFileSize) {
-                    transStatus.innerText = "🎉 缓冲完毕！已加载本地高清原片";
+                    transStatus.innerText = "🎉 缓冲完毕！已加载高清原片";
                     const blob = new Blob(receivedChunks, { type: fileMeta.mime });
                     player.src = URL.createObjectURL(blob);
                     receivedChunks = [];
@@ -186,15 +248,58 @@
         });
     }
 
+    // 4. 在线视频/流媒体加载 (支持 .m3u8 与普通 mp4)
+    function loadVideoUrl(url, startTime = 0) {
+        if (!url) return;
+        onlineUrlInput.value = url;
+        localStorage.setItem('syncdrop_last_url', url);
+
+        // 如果是 m3u8 切片流且浏览器支持 Hls.js
+        if (url.includes('.m3u8')) {
+            if (Hls.isSupported()) {
+                if (hls) hls.destroy();
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (startTime > 0) player.currentTime = startTime;
+                });
+            } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+                // 原生支持 (如 iOS Safari)
+                player.src = url;
+                if (startTime > 0) player.currentTime = startTime;
+            }
+        } else {
+            // 普通 MP4 / WebM 直链
+            if (hls) { hls.destroy(); hls = null; }
+            player.src = url;
+            if (startTime > 0) player.currentTime = startTime;
+        }
+    }
+
+    loadUrlBtn.onclick = () => {
+        const url = onlineUrlInput.value.trim();
+        if (!url) return alert("请先输入在线视频链接！");
+        loadVideoUrl(url);
+        // 通知对方同步加载该地址
+        if (conn && conn.open) {
+            conn.send({
+                type: 'load-url',
+                url: url,
+                time: player.currentTime
+            });
+        }
+    };
+
+    // 5. 本地视频原画直传
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
-            if (!conn || !conn.open) alert("请先成功连接对方！");
+            if (!conn || !conn.open) alert("请先成功建立连接！");
             return;
         }
 
         player.src = URL.createObjectURL(file);
-
         conn.send({
             type: 'file-start',
             name: file.name,
@@ -203,20 +308,17 @@
         });
 
         progressBox.style.display = 'block';
-        transStatus.innerText = "正在发送原画到对方设备...";
+        transStatus.innerText = "正在发送高清原画到对方设备...";
 
         let offset = 0;
         const reader = new FileReader();
-
         function readSlice(o) {
-            const slice = file.slice(o, o + CHUNK_SIZE);
-            reader.readAsArrayBuffer(slice);
+            reader.readAsArrayBuffer(file.slice(o, o + CHUNK_SIZE));
         }
 
         reader.onload = (evt) => {
             conn.send({ type: 'file-chunk', chunk: evt.target.result });
             offset += evt.target.result.byteLength;
-
             const percent = Math.min(100, Math.round((offset / file.size) * 100));
             barFill.style.width = percent + '%';
             transPercent.innerText = percent + '%';
@@ -231,10 +333,10 @@
                 transStatus.innerText = "✅ 传输完成，对方已收到高清原件！";
             }
         };
-
         readSlice(0);
     };
 
+    // 6. 播放器进度记忆与行为广播
     function sendSync(action) {
         if (conn && conn.open && !isRemoteAction) {
             conn.send({
@@ -245,9 +347,27 @@
         }
     }
 
+    // 实时记录播放时间戳，刷新后可续播
+    player.addEventListener('timeupdate', () => {
+        if (player.currentTime > 0) {
+            localStorage.setItem('syncdrop_last_time', player.currentTime);
+        }
+    });
+
     player.addEventListener('play', () => sendSync('play'));
     player.addEventListener('pause', () => sendSync('pause'));
     player.addEventListener('seeked', () => sendSync('seek'));
+
+    // 页面初次加载时检查是否有历史播放记录
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedUrl = localStorage.getItem('syncdrop_last_url');
+        const savedTime = parseFloat(localStorage.getItem('syncdrop_last_time') || 0);
+        if (savedUrl) {
+            onlineUrlInput.value = savedUrl;
+            // 提示用户恢复进度
+            console.log("检测到历史播放进度:", savedUrl, savedTime);
+        }
+    });
 </script>
 </body>
 </html>
