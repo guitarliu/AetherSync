@@ -4,48 +4,199 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SyncDrop - 异地原画影音私密同步</title>
-    <!-- 可爱显眼的标签栏图标：戴耳机的发光萌猫 (SVG 内联无需外链) -->
+    <!-- 可爱显眼的标签栏图标：戴耳机的发光萌猫 (SVG 内联，无需依赖任何图片资源) -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧🐱</text></svg>">
     
+    <!-- 引入 PeerJS (WebRTC P2P 打洞通信) -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- 引入 Hls.js (支持播放主流在线 m3u8 切片流媒体) -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f1117; color: #e0e0e0; padding: 15px; }
-        .card { background: #1a1d24; padding: 15px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #2d3139; }
-        h2 { font-size: 1.2rem; margin-bottom: 10px; color: #ff758c; text-align: center; }
-        input[type="text"], button { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #333; font-size: 14px; }
-        input[type="text"] { background: #262930; color: #fff; }
-        button { background: #ff758c; color: #fff; font-weight: bold; cursor: pointer; border: none; }
-        button:active { filter: brightness(0.85); }
-        .row-btn { display: flex; gap: 8px; }
-        .btn-sub { background: #374151; font-size: 12px; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: #0f1117; 
+            color: #e0e0e0; 
+            padding: 15px; 
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card { 
+            background: #1a1d24; 
+            padding: 15px; 
+            border-radius: 12px; 
+            margin-bottom: 12px; 
+            border: 1px solid #2d3139; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        h2 { 
+            font-size: 1.25rem; 
+            margin-bottom: 12px; 
+            color: #ff758c; 
+            text-align: center; 
+            letter-spacing: 0.5px;
+        }
+        input[type="text"], button { 
+            width: 100%; 
+            padding: 11px; 
+            margin: 6px 0; 
+            border-radius: 8px; 
+            border: 1px solid #333; 
+            font-size: 14px; 
+        }
+        input[type="text"] { 
+            background: #262930; 
+            color: #fff; 
+            outline: none;
+        }
+        input[type="text"]:focus { 
+            border-color: #ff758c; 
+        }
+        button { 
+            background: #ff758c; 
+            color: #fff; 
+            font-weight: bold; 
+            cursor: pointer; 
+            border: none; 
+            transition: all 0.2s;
+        }
+        button:active { 
+            filter: brightness(0.85); 
+            transform: scale(0.99);
+        }
+        button:disabled { 
+            background: #4a4d55; 
+            cursor: not-allowed; 
+        }
+        .row-btn { 
+            display: flex; 
+            gap: 8px; 
+        }
+        .btn-sub { 
+            background: #374151; 
+            font-size: 13px; 
+        }
+        .btn-sub:hover { 
+            background: #4b5563; 
+        }
         
         /* 播放器与音乐模式切换 */
-        .player-wrapper { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; min-height: 220px; display: flex; align-items: center; justify-content: center; }
-        video { width: 100%; max-height: 55vh; display: block; }
+        .player-wrapper { 
+            position: relative; 
+            width: 100%; 
+            background: #000; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            min-height: 220px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        video { 
+            width: 100%; 
+            max-height: 55vh; 
+            display: block; 
+            outline: none;
+        }
         
-        /* 音乐模式：黑胶唱片特效 */
-        .music-view { display: none; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 260px; background: radial-gradient(circle, #2a2d36 0%, #111215 100%); }
-        .vinyl { width: 150px; height: 150px; border-radius: 50%; background: repeating-radial-gradient(#111, #111 4px, #222 5px, #111 6px); border: 4px solid #333; box-shadow: 0 0 20px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; animation: rotate 8s linear infinite; animation-play-state: paused; }
-        .vinyl-center { width: 45px; height: 45px; border-radius: 50%; background: #ff758c; border: 3px solid #fff; }
-        .music-title { margin-top: 15px; font-size: 14px; color: #ff758c; font-weight: bold; }
+        /* 音乐模式：复古黑胶唱片特效 */
+        .music-view { 
+            display: none; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            width: 100%; 
+            height: 260px; 
+            background: radial-gradient(circle, #2a2d36 0%, #111215 100%); 
+        }
+        .vinyl { 
+            width: 150px; 
+            height: 150px; 
+            border-radius: 50%; 
+            background: repeating-radial-gradient(#111, #111 4px, #222 5px, #111 6px); 
+            border: 4px solid #333; 
+            box-shadow: 0 0 25px rgba(0,0,0,0.8); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            animation: rotate 8s linear infinite; 
+            animation-play-state: paused; 
+        }
+        .vinyl-center { 
+            width: 48px; 
+            height: 48px; 
+            border-radius: 50%; 
+            background: #ff758c; 
+            border: 3px solid #fff; 
+        }
+        .music-title { 
+            margin-top: 15px; 
+            font-size: 14px; 
+            color: #ff758c; 
+            font-weight: bold; 
+            max-width: 80%;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes rotate { 
+            from { transform: rotate(0deg); } 
+            to { transform: rotate(360deg); } 
+        }
 
-        .progress-box { margin: 10px 0; display: none; }
-        .bar-bg { background: #333; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 5px; }
-        .bar-fill { background: #00c853; height: 100%; width: 0%; transition: width 0.1s; }
-        .status { font-size: 13px; color: #aaa; text-align: center; margin: 5px 0; word-break: break-all; }
-        .badge { background: #2d3748; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #ff758c; cursor: pointer; display: inline-block; }
-        .security-tag { font-size: 11px; color: #4caf50; display: inline-block; margin-top: 4px; }
+        .progress-box { 
+            margin: 10px 0; 
+            display: none; 
+        }
+        .bar-bg { 
+            background: #333; 
+            height: 8px; 
+            border-radius: 4px; 
+            overflow: hidden; 
+            margin-top: 5px; 
+        }
+        .bar-fill { 
+            background: #00c853; 
+            height: 100%; 
+            width: 0%; 
+            transition: width 0.1s; 
+        }
+        .status { 
+            font-size: 13px; 
+            color: #aaa; 
+            text-align: center; 
+            margin: 5px 0; 
+            word-break: break-all; 
+        }
+        .badge { 
+            background: #2d3748; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-family: monospace; 
+            color: #ff758c; 
+            cursor: pointer; 
+            display: inline-block; 
+            transition: background 0.2s;
+        }
+        .badge:hover { 
+            background: #3c485d; 
+        }
+        .security-tag { 
+            font-size: 11px; 
+            color: #4caf50; 
+            display: inline-block; 
+            margin-top: 4px; 
+        }
     </style>
 </head>
 <body>
 
     <h2>🎧 SyncDrop 异地私密影音室</h2>
 
-    <!-- 1. 连接面板 -->
+    <!-- 1. 专属加密连接面板 -->
     <div class="card">
         <div class="status">
             你的私密配对码 (点击复制): 
@@ -60,18 +211,18 @@
         <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 准备就绪</div>
     </div>
 
-    <!-- 2. 片源与音乐选择 -->
+    <!-- 2. 音视频源加载面板 -->
     <div class="card">
-        <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px;">🎵 音视频源选择（支持视频/歌曲）</div>
+        <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px;">🎵 媒体选择（在线网页/流媒体 或 本地原画直传）</div>
         
-        <!-- 在线流与网易云音乐链接解析 -->
-        <input type="text" id="onlineUrl" placeholder="粘贴在线视频(.m3u8/.mp4) 或 网易云歌曲分享链接">
-        <button id="loadUrlBtn" style="background: #3b82f6;">同步载入网络音频/视频</button>
+        <!-- 在线流与智能嗅探输入 -->
+        <input type="text" id="onlineUrl" placeholder="粘贴视频网页/在线直链(.m3u8/.mp4) 或 网易云歌曲链接">
+        <button id="loadUrlBtn" style="background: #3b82f6;">智能嗅探并载入播放</button>
 
-        <!-- 本地上传 -->
+        <!-- 本地音视频直传 -->
         <div style="margin-top: 10px;">
             <span style="font-size: 12px; color: #aaa;">或者上传本地无损音频(MP3/FLAC)或高清电影：</span>
-            <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px;">
+            <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px; color: #888;">
         </div>
 
         <div class="progress-box" id="progressBox">
@@ -83,12 +234,12 @@
         </div>
     </div>
 
-    <!-- 3. 双模播放器（视频/黑胶唱片模式自动切换） -->
+    <!-- 3. 双模播放器（视频与黑胶唱片模式自动切换） -->
     <div class="card" style="padding: 10px;">
         <div class="player-wrapper">
             <!-- 视频容器 -->
             <video id="player" controls playsinline webkit-playsinline></video>
-            <!-- 音乐黑胶唱片模式容器 -->
+            <!-- 音乐黑胶唱片容器 -->
             <div id="musicView" class="music-view">
                 <div class="vinyl" id="vinyl"><div class="vinyl-center"></div></div>
                 <div class="music-title" id="musicTitle">正在播放音频...</div>
@@ -97,7 +248,7 @@
     </div>
 
 <script>
-    const CHUNK_SIZE = 32 * 1024;
+    const CHUNK_SIZE = 32 * 1024; // 32KB 分片大小
     let peer = null, conn = null, hls = null;
     let isRemoteAction = false;
     let isAudioMode = false;
@@ -121,7 +272,7 @@
     const vinyl = document.getElementById('vinyl');
     const musicTitle = document.getElementById('musicTitle');
 
-    // 1. 初始化 PeerJS
+    // 1. 初始化 PeerJS（配置国内外高可用 STUN 穿透池）
     peer = new Peer({
         config: {
             iceServers: [
@@ -136,6 +287,8 @@
     peer.on('open', id => {
         myIdEl.innerText = id;
         connStatusEl.innerText = "状态: 安全信道就绪";
+        
+        // 尝试自动恢复最后一次连接的目标
         const lastTarget = localStorage.getItem('syncdrop_last_peer');
         if (lastTarget && lastTarget !== id) {
             targetIdEl.value = lastTarget;
@@ -143,10 +296,22 @@
         }
     });
 
-    // 2. 防偷听机制：如果已建立连接，严禁第三者接入
+    peer.on('error', err => {
+        console.error("PeerJS 异常:", err);
+        connStatusEl.style.color = "#ff5252";
+        if (err.type === 'peer-unavailable') {
+            connStatusEl.innerText = "❌ 连接失败：对方未在线或已刷新";
+        } else if (err.type === 'network') {
+            connStatusEl.innerText = "❌ 网络故障：无法连上信令中继";
+        } else {
+            connStatusEl.innerText = "❌ 异常: " + err.type;
+        }
+    });
+
+    // 2. 防偷听与私密锁死机制：若已连接，严禁任何第三方接入
     peer.on('connection', incomingConn => {
         if (conn && conn.open) {
-            console.warn("检测到未授权的第三方尝试接入，已自动拒绝连接！");
+            console.warn("🔒 检测到第三方尝试接入，防偷听密室机制已自动拦截拒绝！");
             incomingConn.close();
             return;
         }
@@ -159,11 +324,11 @@
 
     copyRoomLinkBtn.onclick = () => {
         const roomUrl = `${window.location.origin}${window.location.pathname}?connect=${myIdEl.innerText}`;
-        copyText(roomUrl, "已复制专属房间链接！直接发给对方打开即可。");
+        copyText(roomUrl, "已复制专属房间链接！直接发给对方，打开即可自动配对。");
     };
 
     function copyText(text, msg) {
-        navigator.clipboard.writeText(text).then(() => alert(msg)).catch(() => prompt("请复制：", text));
+        navigator.clipboard.writeText(text).then(() => alert(msg)).catch(() => prompt("请手动复制：", text));
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -177,13 +342,17 @@
     function connectToPeer(destId) {
         if (destId === myIdEl.innerText) return;
         connStatusEl.innerText = "⏳ 正在建立双人加密隧道...";
+        connStatusEl.style.color = "#ff9800";
         conn = peer.connect(destId, { reliable: true });
         localStorage.setItem('syncdrop_last_peer', destId);
         bindConnEvents();
     }
 
-    if (autoTarget) setTimeout(() => connectToPeer(autoTarget), 1000);
+    if (autoTarget) {
+        setTimeout(() => connectToPeer(autoTarget), 1000);
+    }
 
+    // 3. 通信管道事件监听
     function bindConnEvents() {
         conn.on('open', () => {
             connStatusEl.innerText = "🔒 专属密室已锁死：仅限你们两人，防偷听已生效";
@@ -196,6 +365,7 @@
         });
 
         conn.on('data', data => {
+            // A. 同步播放、暂停、进度跳转
             if (data.type === 'sync') {
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
@@ -205,16 +375,18 @@
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
+            // B. 同步网络音视频链接
             else if (data.type === 'load-url') {
                 parseAndPlayUrl(data.url, data.isAudio, data.title);
             }
+            // C. 接收本地原画大文件分块
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 expectedFileSize = data.size;
                 receivedBytes = 0;
                 receivedChunks = [];
                 progressBox.style.display = 'block';
-                transStatus.innerText = "对方正在给你传输高清原件...";
+                transStatus.innerText = "对方正在给你传输高清原画/音频...";
             }
             else if (data.type === 'file-chunk') {
                 receivedChunks.push(data.chunk);
@@ -235,7 +407,7 @@
         });
     }
 
-    // 3. UI 模式切换（视频 / 黑胶唱片模式）
+    // 4. UI 模式切换（视频 / 黑胶唱片模式）
     function setUIMode(audioMode, title = "正在同步收听音频...") {
         isAudioMode = audioMode;
         if (audioMode) {
@@ -248,13 +420,56 @@
         }
     }
 
-    // 4. 网易云与在线音视频链接解析器
+    // 5. 跨域智能嗅探：从普通网页提取 m3u8
+    async function smartExtractVideoUrl(inputUrl) {
+        if (inputUrl.includes('.m3u8') || inputUrl.match(/\.(mp4|webm|flv|mp3|flac|wav|m4a)($|\?)/i) || inputUrl.includes('163.com')) {
+            return inputUrl;
+        }
+
+        connStatusEl.innerText = "🔍 检测到网页链接，正在尝试嗅探隐藏的视频流...";
+        connStatusEl.style.color = "#ff9800";
+
+        // 利用公共中继穿透浏览器 CORS 限制
+        const proxyUrls = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(inputUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(inputUrl)}`
+        ];
+
+        for (const proxy of proxyUrls) {
+            try {
+                const res = await fetch(proxy, { signal: AbortSignal.timeout(5000) });
+                const html = await res.text();
+
+                // 规则 A：提取主流影视站 (苹果CMS / MacCMS) 播放器变量
+                const jsonMatch = html.match(/var\s+(?:player_aaaa|player_data)\s*=\s*({.*?});/s);
+                if (jsonMatch) {
+                    try {
+                        const parsed = JSON.parse(jsonMatch[1]);
+                        if (parsed.url && parsed.url.startsWith('http')) {
+                            return parsed.url.replace(/\\/g, '');
+                        }
+                    } catch(e) {}
+                }
+
+                // 规则 B：全局扫描源码中的 .m3u8 绝对路径
+                const m3u8Match = html.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/i);
+                if (m3u8Match) {
+                    return m3u8Match[0].replace(/\\/g, '');
+                }
+            } catch (err) {
+                console.warn("当前代理嗅探失败，尝试下一个...", err);
+            }
+        }
+        return null;
+    }
+
+    // 6. 音视频链接解析与播放引擎
     function parseAndPlayUrl(rawUrl, forceAudio = false, customTitle = "") {
         let finalUrl = rawUrl.trim();
         let isAudio = forceAudio;
         let title = customTitle || "在线流媒体";
 
-        // 网易云音乐智能嗅探
+        // 网易云音乐直链智能提取
         const neteaseMatch = finalUrl.match(/id=(\d+)/);
         if (finalUrl.includes('163.com') && neteaseMatch) {
             const songId = neteaseMatch[1];
@@ -268,6 +483,7 @@
 
         setUIMode(isAudio, title);
 
+        // HLS m3u8 流驱动
         if (finalUrl.includes('.m3u8')) {
             if (Hls.isSupported()) {
                 if (hls) hls.destroy();
@@ -285,10 +501,30 @@
         return { finalUrl, isAudio, title };
     }
 
-    loadUrlBtn.onclick = () => {
+    loadUrlBtn.onclick = async () => {
         const raw = onlineUrlInput.value.trim();
         if (!raw) return alert("请先输入链接！");
-        const { finalUrl, isAudio, title } = parseAndPlayUrl(raw);
+
+        loadUrlBtn.disabled = true;
+        loadUrlBtn.innerText = "⏳ 正在分析解析...";
+
+        let targetPlayUrl = raw;
+
+        // 若不是直链，启动智能嗅探
+        if (!raw.includes('.m3u8') && !raw.match(/\.(mp4|mp3|flac)($|\?)/i) && !raw.includes('163.com')) {
+            const extracted = await smartExtractVideoUrl(raw);
+            if (extracted) {
+                targetPlayUrl = extracted;
+                alert(`🎉 成功从该网页中嗅探提取到视频源：\n${extracted}`);
+            } else {
+                alert("⚠️ 无法直接从该网页自动剥离视频流。\n\n【原因】：该网页使用了动态 iframe 或开启了防爬虫保护。\n【解决】：请在手机使用（Alook/Via）浏览器的「媒体嗅探」或电脑按 F12 抓取以 .m3u8 结尾的真实地址粘贴进来即可播放！");
+                loadUrlBtn.disabled = false;
+                loadUrlBtn.innerText = "智能嗅探并载入播放";
+                return;
+            }
+        }
+
+        const { finalUrl, isAudio, title } = parseAndPlayUrl(targetPlayUrl);
         if (conn && conn.open) {
             conn.send({
                 type: 'load-url',
@@ -297,13 +533,16 @@
                 title: title
             });
         }
+
+        loadUrlBtn.disabled = false;
+        loadUrlBtn.innerText = "智能嗅探并载入播放";
     };
 
-    // 5. 本地音视频文件上传
+    // 7. 本地大文件分块直传（带背压防护，弱网不卡画质不丢）
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
-            if (!conn || !conn.open) alert("请先成功连接对方！");
+            if (!conn || !conn.open) alert("请先成功建立双人连接！");
             return;
         }
 
@@ -335,19 +574,20 @@
             transPercent.innerText = percent + '%';
 
             if (offset < file.size) {
+                // 背压控制：当底层 WebRTC 队列堆积超过 2MB 时降速等待，保护弱网与手机内存
                 if (conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
                     setTimeout(() => readSlice(offset), 50);
                 } else {
                     readSlice(offset);
                 }
             } else {
-                transStatus.innerText = "✅ 传输完成！双方均已加载";
+                transStatus.innerText = "✅ 传输完成！双方均已就绪";
             }
         };
         readSlice(0);
     };
 
-    // 6. 状态同步与黑胶唱片动画联动
+    // 8. 播放器行为同步与黑胶唱片联动
     function sendSync(action) {
         if (conn && conn.open && !isRemoteAction) {
             conn.send({
