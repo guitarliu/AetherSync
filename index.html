@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>异地私密影音同步</title>
+    <title>SyncDrop - 异地P2P原画影音同步</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -13,28 +13,32 @@
         input[type="text"], button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 8px; border: 1px solid #333; font-size: 14px; }
         input[type="text"] { background: #2a2a2a; color: #fff; }
         button { background: #0070f3; color: #fff; font-weight: bold; cursor: pointer; border: none; }
-        button:disabled { background: #444; }
+        button:active { filter: brightness(0.85); }
+        .copy-btn { background: #374151; font-size: 12px; padding: 5px 10px; width: auto; margin-left: 8px; }
         video { width: 100%; max-height: 55vh; background: #000; border-radius: 8px; margin-top: 10px; display: block; }
         .progress-box { margin: 10px 0; display: none; }
         .bar-bg { background: #333; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 5px; }
         .bar-fill { background: #00c853; height: 100%; width: 0%; transition: width 0.1s; }
-        .status { font-size: 13px; color: #aaa; text-align: center; margin: 5px 0; }
-        .badge { background: #2d3748; padding: 2px 6px; border-radius: 4px; font-family: monospace; word-break: break-all; }
+        .status { font-size: 13px; color: #aaa; text-align: center; margin: 5px 0; word-break: break-all; }
+        .badge { background: #2d3748; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #64b5f6; }
     </style>
 </head>
 <body>
 
-    <h2>异地影院 (P2P 原画直连)</h2>
+    <h2>🎬 SyncDrop 异地原画影院</h2>
 
     <div class="card">
-        <div class="status">我的连接码: <span id="myId" class="badge">正在获取...</span></div>
-        <input type="text" id="targetId" placeholder="在此粘贴对方的连接码">
-        <button id="connBtn">连接对方</button>
-        <div id="connStatus" class="status" style="color: #ff9800;">状态: 尚未建立连结</div>
+        <div class="status" style="margin-bottom: 10px;">
+            我的连接码: <span id="myId" class="badge">正在连接信令服务器...</span>
+            <button id="copyBtn" class="copy-btn" style="display:none;">复制</button>
+        </div>
+        <input type="text" id="targetId" placeholder="粘贴对方发来的连接码">
+        <button id="connBtn">开始连接对方</button>
+        <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold; margin-top: 8px;">状态: 等待操作</div>
     </div>
 
     <div class="card">
-        <label style="font-size: 14px; font-weight: bold;">发片方选择文件（视频/音频）：</label>
+        <label style="font-size: 14px; font-weight: bold;">发片方选择本地文件：</label>
         <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 8px;">
         
         <div class="progress-box" id="progressBox">
@@ -51,17 +55,13 @@
     </div>
 
 <script>
-    const CHUNK_SIZE = 32 * 1024; // 32KB 每次分块传输（平衡移动端内存与网络吞吐）
+    const CHUNK_SIZE = 32 * 1024;
     let peer = null, conn = null;
     let isRemoteAction = false;
-
-    // 文件传输相关缓存
-    let receivedChunks = [];
-    let receivedBytes = 0;
-    let expectedFileSize = 0;
-    let fileMeta = null;
+    let receivedChunks = [], receivedBytes = 0, expectedFileSize = 0, fileMeta = null;
 
     const myIdEl = document.getElementById('myId');
+    const copyBtn = document.getElementById('copyBtn');
     const targetIdEl = document.getElementById('targetId');
     const connBtn = document.getElementById('connBtn');
     const connStatusEl = document.getElementById('connStatus');
@@ -72,35 +72,85 @@
     const transPercent = document.getElementById('transPercent');
     const transStatus = document.getElementById('transStatus');
 
-    // 1. 初始化 WebRTC 客户端（直接使用公共中继，无需域名和公网IP）
+    // 升级：使用国内外混合的高可用 STUN 服务器池
     peer = new Peer({
         config: {
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun.miwifi.com:3478' },         // 小米公共 STUN (国内极快)
+                { urls: 'stun:stun.chat.bilibili.com:3478' }, // B站公共 STUN (国内低延迟)
+                { urls: 'stun:stun.cloudflare.com:3478' },    // Cloudflare 全球 STUN
+                { urls: 'stun:stun.l.google.com:19302' }      // Google 备用 STUN
             ]
         }
     });
 
-    peer.on('open', id => myIdEl.innerText = id);
-    peer.on('connection', c => { conn = c; initConn(); });
+    peer.on('open', id => {
+        myIdEl.innerText = id;
+        copyBtn.style.display = 'inline-block';
+        connStatusEl.innerText = "状态: 信令就绪，请复制连接码发给对方";
+        connStatusEl.style.color = "#aaa";
+    });
+
+    // 完备的异常处理
+    peer.on('error', err => {
+        console.error("PeerJS 错误:", err);
+        connStatusEl.style.color = "#ff5252";
+        if (err.type === 'peer-unavailable') {
+            connStatusEl.innerText = "❌ 连接失败：找不到该连接码，对方是否已离线或刷新？";
+        } else if (err.type === 'network') {
+            connStatusEl.innerText = "❌ 网络故障：无法连接公共信令节点，请检查网络。";
+        } else {
+            connStatusEl.innerText = "❌ 发生异常: " + err.type;
+        }
+    });
+
+    copyBtn.onclick = () => {
+        navigator.clipboard.writeText(myIdEl.innerText).then(() => {
+            alert("已成功复制连接码！直接发给对方即可。");
+        }).catch(() => {
+            prompt("复制以下连接码发给对方：", myIdEl.innerText);
+        });
+    };
+
+    peer.on('connection', c => {
+        conn = c;
+        bindConnEvents();
+    });
 
     connBtn.onclick = () => {
         const dest = targetIdEl.value.trim();
-        if (dest) {
-            conn = peer.connect(dest, { reliable: true });
-            initConn();
+        if (!dest) {
+            alert("请先粘贴对方的连接码！");
+            return;
         }
+        if (dest === myIdEl.innerText) {
+            alert("不能连接自己的连接码！");
+            return;
+        }
+        connStatusEl.innerText = "⏳ 正在与对方进行 P2P 打洞穿透，请稍候...";
+        connStatusEl.style.color = "#ff9800";
+        conn = peer.connect(dest, { reliable: true });
+        bindConnEvents();
     };
 
-    function initConn() {
+    function bindConnEvents() {
         conn.on('open', () => {
-            connStatusEl.innerText = "✅ 双方已成功建立 P2P 隧道！";
+            connStatusEl.innerText = "✅ 双方已成功建立 P2P 隧道！可直接选择视频";
             connStatusEl.style.color = "#00c853";
         });
 
+        conn.on('close', () => {
+            connStatusEl.innerText = "⚠️ P2P 隧道已断开";
+            connStatusEl.style.color = "#ff5252";
+        });
+
+        conn.on('error', (err) => {
+            console.error("连接通道错误:", err);
+            connStatusEl.innerText = "❌ 传输隧道报错";
+            connStatusEl.style.color = "#ff5252";
+        });
+
         conn.on('data', data => {
-            // A. 控制指令同步
             if (data.type === 'sync') {
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
@@ -110,7 +160,6 @@
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
-            // B. 接收文件元信息
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 expectedFileSize = data.size;
@@ -119,7 +168,6 @@
                 progressBox.style.display = 'block';
                 transStatus.innerText = "对方正在给你传输原画文件，请稍候...";
             }
-            // C. 接收二进制文件切片
             else if (data.type === 'file-chunk') {
                 receivedChunks.push(data.chunk);
                 receivedBytes += data.chunk.byteLength;
@@ -132,24 +180,21 @@
                     transStatus.innerText = "🎉 缓冲完毕！已加载本地高清原片";
                     const blob = new Blob(receivedChunks, { type: fileMeta.mime });
                     player.src = URL.createObjectURL(blob);
-                    receivedChunks = []; // 释放内存
+                    receivedChunks = [];
                 }
             }
         });
     }
 
-    // 2. 选择文件并分片发送（带背压处理，保证弱网不崩溃）
-    fileInput.onchange = async (e) => {
+    fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
-            if (!conn || !conn.open) alert("请先连接对方！");
+            if (!conn || !conn.open) alert("请先成功连接对方！");
             return;
         }
 
-        // 本地立即播放
         player.src = URL.createObjectURL(file);
 
-        // 通知对方准备接收
         conn.send({
             type: 'file-start',
             name: file.name,
@@ -177,7 +222,6 @@
             transPercent.innerText = percent + '%';
 
             if (offset < file.size) {
-                // 背压控制：防止发得太快撑爆 WebRTC 内部缓冲区
                 if (conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
                     setTimeout(() => readSlice(offset), 50);
                 } else {
@@ -191,7 +235,6 @@
         readSlice(0);
     };
 
-    // 3. 播放器行为同步通知对方
     function sendSync(action) {
         if (conn && conn.open && !isRemoteAction) {
             conn.send({
