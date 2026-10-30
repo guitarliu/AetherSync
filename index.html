@@ -87,6 +87,13 @@
             padding: 6px 12px;
             width: auto;
         }
+        .btn-subtitles {
+            background: #0284c7;
+            font-size: 12px;
+            padding: 6px 14px;
+            width: auto;
+            border-radius: 6px;
+        }
 
         .tabs-nav {
             display: flex;
@@ -95,19 +102,21 @@
             padding: 4px;
             margin-bottom: 12px;
             gap: 4px;
+            overflow-x: auto;
         }
         .tab-btn {
             flex: 1;
-            padding: 8px 0;
+            padding: 8px 4px;
             background: transparent;
             color: #888;
-            font-size: 13px;
+            font-size: 12px;
             border-radius: 6px;
             border: none;
             cursor: pointer;
             text-align: center;
             font-weight: normal;
             transition: all 0.2s;
+            white-space: nowrap;
         }
         .tab-btn.active {
             background: #2d3748;
@@ -124,6 +133,10 @@
         }
         .tab-btn.tab-file.active {
             background: #059669;
+            color: #fff;
+        }
+        .tab-btn.tab-stream.active {
+            background: #d97706;
             color: #fff;
         }
         .tab-content {
@@ -156,6 +169,16 @@
             display: block; 
             outline: none;
         }
+        /* 字幕样式美化 */
+        video::cue {
+            background: rgba(0, 0, 0, 0.75);
+            color: #ffffff;
+            font-size: 16px;
+            line-height: 1.4;
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+
         #ytPlayerContainer {
             width: 100%;
             height: 450px;
@@ -348,28 +371,40 @@
     <!-- 2. 音视频源加载面板 -->
     <div class="card">
         <div class="tabs-nav">
-            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">🎬 全网影视 / 油管 / X(Twitter)</button>
+            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">🎬 全网影视 / 油管 / X</button>
             <button class="tab-btn tab-music" onclick="switchTab('tabMusic')">🎧 全网音乐 / 搜歌点歌</button>
             <button class="tab-btn tab-file" onclick="switchTab('tabFile')">📁 本地原画大文件直传</button>
+            <button class="tab-btn tab-stream" onclick="switchTab('tabStream')">🖥️ 实时推流 (大片免等待)</button>
         </div>
 
+        <!-- Tab 1: 全网影视 -->
         <div id="tabVideo" class="tab-content active">
             <div class="tab-desc">💡 支持 <b>YouTube (油管)</b> 视频、<b>X (Twitter)</b> 推文视频、在线影视网页嗅探、<b>.m3u8</b> 流媒体切片及 <b>.mp4</b> 直链。</div>
             <input type="text" id="videoUrlInput" placeholder="输入：YouTube链接、X(Twitter)推文地址、影视站网页或直链">
             <button id="loadVideoBtn" style="background: #2563eb;">🚀 智能解析并两端同步播放</button>
         </div>
 
+        <!-- Tab 2: 全网音乐 -->
         <div id="tabMusic" class="tab-content">
             <div class="tab-desc">💡 支持直接输入<b>歌名/歌手</b>一键搜歌播放，或粘贴<b>网易云 / QQ音乐 / 酷狗 / 酷我 / MP3直链</b>。</div>
             <input type="text" id="musicUrlInput" placeholder="输入：歌名(如 晴天 周杰伦) 或 音乐分享链接(网易云/QQ/酷狗/酷我)">
             <button id="loadMusicBtn" style="background: #ff758c;">🎶 全网搜歌/解析并同步听歌</button>
         </div>
 
+        <!-- Tab 3: 本地大文件原画直传 -->
         <div id="tabFile" class="tab-content">
-            <div class="tab-desc">💡 从电脑或手机选择任意本地电影（MKV/MP4）或无损音乐（FLAC/MP3），<b>P2P 原始码率分块直传</b>，画质 0 损耗！</div>
+            <div class="tab-desc">💡 从电脑或手机选择任意本地电影（MKV/MP4/MOV）或无损音乐（FLAC/MP3），<b>P2P 原始码率分块直传</b>，画质 0 损耗！<br>⚠️ <i>提示：为保证画面与声音完整同步，请等待传输达 100% 后两端将自动合流开播！</i></div>
             <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px; color: #888;">
         </div>
 
+        <!-- Tab 4: 实时超清推流 -->
+        <div id="tabStream" class="tab-content">
+            <div class="tab-desc">💡 <b>蓝光/4K 巨型大片免等待推流</b>：播放本地大电影时，点击开启推流，对方（手机/平板/电脑）<b>无需下载几十 G 文件</b>，即可实时以 1080P/60FPS 零延迟同步观看！<br>⚠️ <i>提示：推流发起方请在电脑浏览器上操作；共享时推荐选择「标签页」或「屏幕」，并务必勾选<b>「同时共享音频」</b>。</i></div>
+            <button id="startStreamBtn" style="background: #d97706;">🖥️ 开启超清推流（共享画面+声音）</button>
+            <button id="stopStreamBtn" style="background: #7f1d1d; display: none;">⏹️ 停止当前推流</button>
+        </div>
+
+        <!-- 传输进度条 -->
         <div class="progress-box" id="progressBox">
             <div style="font-size: 12px; display: flex; justify-content: space-between;">
                 <span id="transStatus">正在传输原件...</span>
@@ -379,8 +414,17 @@
         </div>
     </div>
 
-    <!-- 3. 三模自适应播放器 -->
+    <!-- 3. 多模自适应播放器 -->
     <div class="card" style="padding: 10px;">
+        <!-- 外挂字幕挂载工具栏 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 13px; font-weight: bold; color: #bbb;">🖥️ 播放视窗</span>
+            <div>
+                <input type="file" id="subInput" accept=".srt,.vtt" style="display: none;">
+                <button id="loadSubBtn" class="btn-subtitles">💬 挂载字幕 (.srt / .vtt)</button>
+            </div>
+        </div>
+
         <div class="player-wrapper">
             <video id="player" controls playsinline webkit-playsinline></video>
             
@@ -414,12 +458,18 @@
 <script>
     const CHUNK_SIZE = 32 * 1024;
     let peer = null, conn = null, hls = null, ytPlayer = null;
+    let localMediaStream = null, currentMediaCall = null;
     let isRemoteAction = false;
     let isUserSeeking = false;
     let connectTimeoutTimer = null;
     let heartbeatInterval = null;
     let retryConnectCount = 0;
 
+    // 文件传输与接收保护状态
+    let isReceivingFile = false;
+    let isSendingFile = false;
+    let isLocalMediaReady = false; // 本地是否已真正就绪，防止早播导致对方黑屏
+    let pendingSyncTime = 0;
     let receivedChunks = [], receivedBytes = 0, expectedFileSize = 0, fileMeta = null;
 
     const myIdEl = document.getElementById('myId');
@@ -434,6 +484,12 @@
     const musicUrlInput = document.getElementById('musicUrlInput');
     const loadMusicBtn = document.getElementById('loadMusicBtn');
     const fileInput = document.getElementById('fileInput');
+
+    const subInput = document.getElementById('subInput');
+    const loadSubBtn = document.getElementById('loadSubBtn');
+
+    const startStreamBtn = document.getElementById('startStreamBtn');
+    const stopStreamBtn = document.getElementById('stopStreamBtn');
 
     const player = document.getElementById('player');
     const ytPlayerContainer = document.getElementById('ytPlayerContainer');
@@ -460,6 +516,7 @@
         if (tabId === 'tabVideo') document.querySelector('.tab-video').classList.add('active');
         if (tabId === 'tabMusic') document.querySelector('.tab-music').classList.add('active');
         if (tabId === 'tabFile') document.querySelector('.tab-file').classList.add('active');
+        if (tabId === 'tabStream') document.querySelector('.tab-stream').classList.add('active');
 
         document.getElementById(tabId).classList.add('active');
     };
@@ -485,12 +542,15 @@
 
     window.addEventListener('beforeunload', () => {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (localMediaStream) {
+            localMediaStream.getTracks().forEach(t => t.stop());
+        }
         if (peer) {
             try { peer.destroy(); } catch(e) {}
         }
     });
 
-    // 1. PeerJS 初始化与心跳保活
+    // 1. 初始化 PeerJS
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -525,6 +585,23 @@
                 connStatusEl.innerText = `⏳ 正在自动恢复与【${lastTarget.substring(0, 8)}...】的连接...`;
                 setTimeout(() => connectToPeer(lastTarget), 800);
             }
+        });
+
+        peer.on('call', incomingCall => {
+            incomingCall.answer();
+            currentMediaCall = incomingCall;
+
+            incomingCall.on('stream', remoteStream => {
+                setUIMode('stream');
+                player.srcObject = remoteStream;
+                player.play().catch(e => console.log("等待交互后播放推流:", e));
+                connStatusEl.innerText = "📺 正在实时接收对方推流画面（超清零延迟）";
+                connStatusEl.style.color = "#00c853";
+            });
+
+            incomingCall.on('close', () => {
+                stopReceiveStream();
+            });
         });
 
         peer.on('disconnected', () => {
@@ -684,7 +761,13 @@
         });
 
         conn.on('data', data => {
+            // A. 原生视频同步：只有在接收端真正加载完毕后才响应，杜绝早播黑屏
             if (data.type === 'sync') {
+                if (isReceivingFile || !isLocalMediaReady) {
+                    // 接收中先暂存进度，待 100% 接收完毕后直接精准跳到这里
+                    pendingSyncTime = data.time;
+                    return;
+                }
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
                     player.currentTime = data.time;
@@ -693,6 +776,7 @@
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
+            // B. YouTube 专属同步
             else if (data.type === 'yt-sync') {
                 isRemoteAction = true;
                 if (ytPlayer && ytPlayer.getPlayerState) {
@@ -705,6 +789,7 @@
                 }
                 setTimeout(() => isRemoteAction = false, 200);
             }
+            // C. 载入媒体源
             else if (data.type === 'load-url') {
                 if (data.mediaType === 'youtube') {
                     loadYouTubeVideo(data.url, false);
@@ -712,13 +797,23 @@
                     applyMediaSource(data.url, data.isAudio, data.title, data.pic);
                 }
             }
+            // D. 接收对端同步过来的外挂字幕
+            else if (data.type === 'load-subtitle') {
+                applySubtitle(data.content, data.name || "外挂字幕");
+            }
+            else if (data.type === 'stream-stop') {
+                stopReceiveStream();
+            }
+            // E. 本地大文件分块接收
             else if (data.type === 'file-start') {
+                isReceivingFile = true;
+                isLocalMediaReady = false;
                 fileMeta = data;
                 expectedFileSize = data.size;
                 receivedBytes = 0;
                 receivedChunks = [];
                 progressBox.style.display = 'block';
-                transStatus.innerText = "对方正在给你传输原画文件...";
+                transStatus.innerText = `对方正在给你传输【${data.name}】...`;
             }
             else if (data.type === 'file-chunk') {
                 receivedChunks.push(data.chunk);
@@ -727,14 +822,33 @@
                 barFill.style.width = percent + '%';
                 transPercent.innerText = percent + '%';
 
+                // 核心修复：100% 完整接收后才组装 Blob，避免 90% 黑屏无声
                 if (receivedBytes >= expectedFileSize) {
-                    transStatus.innerText = "🎉 传输完成！双方均已加载";
+                    isReceivingFile = false;
+                    transStatus.innerText = "🎉 传输完成！正在合流加载原画...";
+                    
                     const isAudio = fileMeta.mime.startsWith('audio');
                     const cleanName = fileMeta.name.replace(/\.[^/.]+$/, "");
                     setUIMode(isAudio ? 'audio' : 'video', cleanName, '');
-                    const blob = new Blob(receivedChunks, { type: fileMeta.mime });
+
+                    // 对苹果 .MOV 等容器做兼容封装
+                    let targetMime = fileMeta.mime;
+                    if (fileMeta.name.toLowerCase().endsWith('.mov')) {
+                        targetMime = 'video/mp4';
+                    }
+
+                    const blob = new Blob(receivedChunks, { type: targetMime });
                     player.src = URL.createObjectURL(blob);
                     receivedChunks = [];
+
+                    player.onloadeddata = () => {
+                        isLocalMediaReady = true;
+                        transStatus.innerText = "✅ 原画原声已就绪，已同步对齐！";
+                        if (pendingSyncTime > 0) {
+                            player.currentTime = pendingSyncTime;
+                        }
+                        player.play().catch(e => console.log("等待交互后播放:", e));
+                    };
                 }
             }
         });
@@ -742,7 +856,7 @@
 
     // 2. 模式切换器
     function setUIMode(mode, title = "正在播放...", pic = "") {
-        if (mode !== 'video' && player) player.pause();
+        if (mode !== 'video' && mode !== 'stream' && player) player.pause();
         if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
 
         if (mode === 'youtube') {
@@ -769,7 +883,131 @@
         return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    // 3. YouTube 播放与同步
+    // 3. 外挂字幕系统（支持 SRT 智能转 WebVTT，双端秒级同步）
+    function srtToVtt(srtText) {
+        let srt = srtText.replace(/^\uFEFF/, '').replace(/\r\n|\r/g, '\n');
+        // 将 SRT 的逗号时间戳转换为 VTT 标准的点号: 00:01:20,000 -> 00:01:20.000
+        let vtt = "WEBVTT\n\n" + srt.replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, '$1.$2');
+        return vtt;
+    }
+
+    function applySubtitle(vttContent, labelName = "字幕") {
+        // 清理已有的字幕轨道
+        const oldTracks = player.querySelectorAll('track');
+        oldTracks.forEach(t => t.remove());
+
+        const blob = new Blob([vttContent], { type: 'text/vtt' });
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = labelName;
+        track.srclang = 'zh';
+        track.src = URL.createObjectURL(blob);
+        track.default = true;
+        player.appendChild(track);
+
+        if (player.textTracks && player.textTracks[0]) {
+            player.textTracks[0].mode = 'showing';
+        }
+    }
+
+    loadSubBtn.onclick = () => subInput.click();
+
+    subInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            let content = evt.target.result;
+            if (file.name.toLowerCase().endsWith('.srt')) {
+                content = srtToVtt(content);
+            }
+            applySubtitle(content, file.name);
+            alert(`✅ 已挂载字幕：${file.name}`);
+
+            // 自动把字幕内容同步推送给对方，对方无需重复找字幕
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'load-subtitle',
+                    content: content,
+                    name: file.name
+                });
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    // 4. 实时超清推流核心逻辑
+    startStreamBtn.onclick = async () => {
+        if (!conn || !conn.open) return alert("请先成功建立双人密室配对后再开启推流！");
+
+        try {
+            localMediaStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    frameRate: { ideal: 60, max: 60 },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                },
+                audio: true
+            });
+        } catch (err) {
+            console.warn("用户取消或屏幕共享授权失败:", err);
+            return;
+        }
+
+        currentMediaCall = peer.call(conn.peer, localMediaStream);
+        startStreamBtn.style.display = 'none';
+        stopStreamBtn.style.display = 'block';
+
+        setUIMode('stream');
+        player.srcObject = localMediaStream;
+        player.muted = true;
+        player.play().catch(()=>{});
+
+        connStatusEl.innerText = "📡 正在向对方超清实时推流中（1080P/60FPS）";
+        connStatusEl.style.color = "#00c853";
+
+        localMediaStream.getVideoTracks()[0].onended = () => stopSharing();
+    };
+
+    function stopSharing() {
+        if (localMediaStream) {
+            localMediaStream.getTracks().forEach(track => track.stop());
+            localMediaStream = null;
+        }
+        if (currentMediaCall) {
+            try { currentMediaCall.close(); } catch(e) {}
+            currentMediaCall = null;
+        }
+        if (player.srcObject) {
+            player.srcObject = null;
+        }
+        player.muted = false;
+        setUIMode('video');
+        startStreamBtn.style.display = 'block';
+        stopStreamBtn.style.display = 'none';
+
+        connStatusEl.innerText = "状态: 推流已结束";
+        connStatusEl.style.color = "#aaa";
+
+        if (conn && conn.open) {
+            conn.send({ type: 'stream-stop' });
+        }
+    }
+
+    stopStreamBtn.onclick = stopSharing;
+
+    function stopReceiveStream() {
+        if (player.srcObject) {
+            player.srcObject.getTracks().forEach(t => t.stop());
+            player.srcObject = null;
+        }
+        setUIMode('video');
+        connStatusEl.innerText = "状态: 对方已结束推流";
+        connStatusEl.style.color = "#aaa";
+    }
+
+    // 5. YouTube 播放与同步
     function extractYouTubeId(url) {
         const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
         return match ? match[1] : null;
@@ -827,7 +1065,7 @@
         }
     }
 
-    // 4. X (Twitter) 推文视频提取
+    // 6. X (Twitter) 推文视频提取
     async function extractXVideo(url) {
         const tweetMatch = url.match(/status\/(\d+)/);
         if (!tweetMatch) return null;
@@ -855,7 +1093,7 @@
         return null;
     }
 
-    // 5. 影视站与常规视频解析
+    // 7. 影视站与常规视频解析
     async function extractAndParseVideo(inputUrl) {
         const url = inputUrl.trim();
 
@@ -904,7 +1142,7 @@
         return { type: 'direct', finalUrl: url, title: "在线影视" };
     }
 
-    // 6. 核心改进：全网音乐深度检索与 HTTPS 升级（解决周杰伦《晴天》等版权歌假死）
+    // 8. 音乐解析与 HTTPS 升级
     function ensureHttps(url) {
         if (!url) return "";
         return url.replace(/^http:\/\//i, "https://");
@@ -930,7 +1168,6 @@
     }
 
     async function searchMusicByKeyword(keyword) {
-        // 多平台轮询嗅探：网易云 -> 腾讯 -> 酷我
         for (const server of ['netease', 'tencent', 'kuwo']) {
             try {
                 const res = await fetch(`https://api.injahow.cn/meting/?server=${server}&type=search&id=${encodeURIComponent(keyword)}`, {
@@ -938,12 +1175,10 @@
                 });
                 const list = await res.json();
                 if (Array.isArray(list) && list.length > 0) {
-                    // 挑选第一个有真实播放地址的歌曲（排除已下架 VIP 占位）
                     for (let i = 0; i < Math.min(list.length, 3); i++) {
                         const song = list[i];
                         let playUrl = song.url;
                         
-                        // 若 search 接口未直接带音频流，通过 song 接口回查真实播放流
                         if (!playUrl && song.id) {
                             const detail = await fetchMetingSong(server, song.id);
                             if (detail && detail.url) {
@@ -1045,7 +1280,6 @@
         };
     }
 
-    // 7. 渲染直链媒体源
     function applyMediaSource(finalUrl, isAudio, title, pic) {
         setUIMode(isAudio ? 'audio' : 'video', title, pic);
 
@@ -1063,11 +1297,10 @@
             player.src = finalUrl;
         }
 
-        // 载入源后重置播放按钮状态
+        isLocalMediaReady = true;
         musicPlayBtn.innerText = "▶";
     }
 
-    // 点击播放视频 / YouTube / X
     loadVideoBtn.onclick = async () => {
         const raw = videoUrlInput.value.trim();
         if (!raw) return alert("请先输入视频链接！");
@@ -1097,7 +1330,6 @@
         loadVideoBtn.innerText = "🚀 智能解析并两端同步播放";
     };
 
-    // 点击播放音乐
     loadMusicBtn.onclick = async () => {
         const raw = musicUrlInput.value.trim();
         if (!raw) return alert("请输入歌名或音乐链接！");
@@ -1108,7 +1340,7 @@
         const result = await extractAndParseMusic(raw);
 
         if (!result || !result.finalUrl) {
-            alert("⚠️ 未能获取到该歌曲的有效音频流。\n\n【原因】：该歌曲可能为平台强版权/VIP付费独占曲目。\n【解决】：建议输入【歌名 + 翻唱/伴奏】搜索，或直接在各大音乐软件复制该歌曲的分享链接粘贴进来！");
+            alert("⚠️ 未能获取到该歌曲的有效音频流。\n\n【原因】：该歌曲可能为平台强版权/VIP付费独占曲目。\n【解决】：建议输入【歌名 + 伴奏/翻唱】搜索，或直接在各大音乐软件复制该歌曲的分享链接粘贴进来！");
             loadMusicBtn.disabled = false;
             loadMusicBtn.innerText = "🎶 全网搜歌/解析并同步听歌";
             return;
@@ -1131,7 +1363,6 @@
         loadMusicBtn.innerText = "🎶 全网搜歌/解析并同步听歌";
     };
 
-    // 8. 核心改进：播放按键容错与真实错误排查
     musicPlayBtn.onclick = () => {
         if (!player.src || player.src.endsWith('undefined') || player.src === window.location.href) {
             return alert("请先输入歌名点击【搜歌】，加载有效音源后再点播放！");
@@ -1170,17 +1401,21 @@
         volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
     };
 
-    // 9. 播放器事件驱动
+    // 播放事件广播：如果发片方还在传输切片，暂缓广播，防止接收方黑屏无声
     player.addEventListener('play', () => {
         vinyl.style.animationPlayState = 'running';
         musicPlayBtn.innerText = "⏸";
-        sendSync('play');
+        if (!isSendingFile) {
+            sendSync('play');
+        }
     });
 
     player.addEventListener('pause', () => {
         vinyl.style.animationPlayState = 'paused';
         musicPlayBtn.innerText = "▶";
-        sendSync('pause');
+        if (!isSendingFile) {
+            sendSync('pause');
+        }
     });
 
     player.addEventListener('timeupdate', () => {
@@ -1196,7 +1431,9 @@
 
     player.addEventListener('seeked', () => {
         currentTimeText.innerText = formatTime(player.currentTime);
-        sendSync('seek');
+        if (!isSendingFile) {
+            sendSync('seek');
+        }
     });
 
     function sendSync(action) {
@@ -1209,7 +1446,7 @@
         }
     }
 
-    // 10. 本地文件原画 P2P 直传
+    // 9. 本地文件大文件直传（带完成对齐锁）
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
@@ -1217,16 +1454,25 @@
             return;
         }
 
+        isSendingFile = true;
+        isLocalMediaReady = true;
+
         const isAudio = file.type.startsWith('audio') || file.name.match(/\.(mp3|flac|wav|m4a|aac)$/i);
         const cleanName = file.name.replace(/\.[^/.]+$/, "");
         setUIMode(isAudio ? 'audio' : 'video', cleanName, '');
+
+        let targetMime = file.type || (isAudio ? 'audio/mp3' : 'video/mp4');
+        if (file.name.toLowerCase().endsWith('.mov')) {
+            targetMime = 'video/mp4';
+        }
+
         player.src = URL.createObjectURL(file);
 
         conn.send({
             type: 'file-start',
             name: file.name,
             size: file.size,
-            mime: file.type || (isAudio ? 'audio/mp3' : 'video/mp4')
+            mime: targetMime
         });
 
         progressBox.style.display = 'block';
@@ -1252,7 +1498,13 @@
                     readSlice(offset);
                 }
             } else {
+                isSendingFile = false;
                 transStatus.innerText = "✅ 传输完成！双方均已就绪";
+                // 传完瞬间向接收端对齐发片方当前的进度
+                sendSync('seek');
+                if (!player.paused) {
+                    sendSync('play');
+                }
             }
         };
         readSlice(0);
