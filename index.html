@@ -32,6 +32,7 @@
             margin-bottom: 12px; 
             border: 1px solid #2d3139; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            overflow: hidden; /* 防止子元素撑破卡片外框 */
         }
         h2 { 
             font-size: 1.25rem; 
@@ -97,7 +98,7 @@
             border-radius: 6px;
         }
 
-        /* 选项卡导航栏 */
+        /* 选项卡导航栏（全新响应式自适应设计） */
         .tabs-nav {
             display: flex;
             background: #12141a;
@@ -105,9 +106,11 @@
             padding: 4px;
             margin-bottom: 12px;
             gap: 4px;
+            width: 100%;
         }
         .tab-btn {
-            flex: 1;
+            flex: 1 1 0;
+            min-width: 0; /* 关键：允许 flex 项目收缩而不溢出 */
             padding: 9px 4px;
             background: transparent;
             color: #888;
@@ -119,6 +122,8 @@
             font-weight: normal;
             transition: all 0.2s;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .tab-btn.active {
             background: #2d3748;
@@ -137,6 +142,27 @@
             background: #059669;
             color: #fff;
         }
+
+        /* 响应式断点控制：窗口缩窄时自动隐藏冗长副标题，防止文字溢出 */
+        @media (max-width: 680px) {
+            .tab-sub-text {
+                display: none;
+            }
+            .tab-btn {
+                font-size: 12px;
+                padding: 8px 2px;
+            }
+        }
+        @media (max-width: 420px) {
+            .tabs-nav {
+                flex-wrap: wrap;
+            }
+            .tab-btn {
+                flex: 1 1 100%;
+                padding: 8px;
+            }
+        }
+
         .tab-content {
             display: none;
         }
@@ -481,12 +507,18 @@
         <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 正在初始化...</div>
     </div>
 
-    <!-- 2. 音视频源加载面板 -->
+    <!-- 2. 音视频源加载面板（自适应防溢出选项卡） -->
     <div class="card">
         <div class="tabs-nav">
-            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">🎬 全网影视 / 油管 / X</button>
-            <button class="tab-btn tab-music" onclick="switchTab('tabMusic')">🎧 全网音乐 / 搜歌点歌</button>
-            <button class="tab-btn tab-file" onclick="switchTab('tabFile')">📁 本地原画大文件直传</button>
+            <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">
+                🎬 全网影视<span class="tab-sub-text"> / 油管 / X</span>
+            </button>
+            <button class="tab-btn tab-music" onclick="switchTab('tabMusic')">
+                🎧 全网音乐<span class="tab-sub-text"> / 搜歌点歌</span>
+            </button>
+            <button class="tab-btn tab-file" onclick="switchTab('tabFile')">
+                📁 本地直传<span class="tab-sub-text"> / 原画大文件</span>
+            </button>
         </div>
 
         <!-- Tab 1: 全网影视 -->
@@ -673,7 +705,7 @@
         document.getElementById(tabId).classList.add('active');
     };
 
-    // 0. 音频闪避引擎 (Audio Ducking)：说话或听语音时背景音压低到 15%，完毕后恢复
+    // 音频闪避引擎 (Audio Ducking)
     function duckBackgroundAudio() {
         if (isVolumeDucked) return;
         isVolumeDucked = true;
@@ -702,7 +734,7 @@
         }
     }
 
-    // 0. IndexedDB 磁盘持久化缓存
+    // IndexedDB 磁盘持久化缓存
     function openDatabase() {
         return new Promise((resolve, reject) => {
             const req = indexedDB.open('SyncDropDB', 1);
@@ -777,7 +809,7 @@
         }
     });
 
-    // 1. PeerJS 初始化
+    // PeerJS 初始化
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -944,7 +976,6 @@
         setTimeout(() => connectToPeer(autoTarget), 1000);
     }
 
-    // 2. 通道事件绑定（增加聊天与语音传输协议）
     function bindConnEvents() {
         if (!conn) return;
 
@@ -1014,11 +1045,9 @@
             else if (data.type === 'load-subtitle') {
                 applySubtitle(data.content, data.name || "外挂字幕");
             }
-            // 接收文字消息
             else if (data.type === 'chat-msg') {
                 renderChatMessage(data.text, false);
             }
-            // 接收语音条
             else if (data.type === 'chat-voice') {
                 renderVoiceMessage(data.audioData, data.duration, false);
             }
@@ -1089,7 +1118,7 @@
         });
     }
 
-    // 3. 聊天与语音对讲核心逻辑
+    // 聊天核心逻辑
     function sendTextMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
@@ -1122,7 +1151,6 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    // 发送与接收语音对讲条（点击播放时智能压低视频背景音）
     function renderVoiceMessage(audioData, duration, isSelf) {
         const div = document.createElement('div');
         div.className = `chat-msg ${isSelf ? 'self' : 'remote'}`;
@@ -1136,13 +1164,13 @@
         `;
 
         div.onclick = () => {
-            duckBackgroundAudio(); // 听语音时压小背景音！
+            duckBackgroundAudio();
             const audio = new Audio(audioData);
             const statusSpan = div.querySelector('span:last-child');
             statusSpan.innerText = "🔊 播放中...";
 
             audio.onended = () => {
-                restoreBackgroundAudio(); // 播完恢复正常背景音！
+                restoreBackgroundAudio();
                 statusSpan.innerText = "▶ 听语音";
             };
             audio.onerror = () => {
@@ -1161,19 +1189,18 @@
         if (e.key === 'Enter') sendTextMessage();
     };
 
-    // 录制语音按钮：点击录音（自动压音）-> 再次点击停止并发送（恢复原音量）
     voiceBtn.onclick = async () => {
         if (!isRecordingVoice) {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                duckBackgroundAudio(); // 录音瞬间自动把背景音乐压低！
+                duckBackgroundAudio();
                 audioChunks = [];
                 mediaRecorder = new MediaRecorder(stream);
                 recordStartTime = Date.now();
 
                 mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
                 mediaRecorder.onstop = () => {
-                    restoreBackgroundAudio(); // 录音完成瞬间恢复背景音乐！
+                    restoreBackgroundAudio();
                     stream.getTracks().forEach(t => t.stop());
 
                     const duration = Math.max(1, Math.round((Date.now() - recordStartTime) / 1000));
@@ -1212,7 +1239,6 @@
         }
     };
 
-    // 4. 边传边播装配
     function tryProgressivePlayback() {
         if (receivedChunks.length === 0) return;
         try {
@@ -1253,7 +1279,6 @@
         } catch(e) {}
     }
 
-    // 5. 模式切换器
     function setUIMode(mode, title = "正在播放...", pic = "") {
         if (mode !== 'video' && player) player.pause();
         if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
@@ -1282,7 +1307,6 @@
         return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    // 6. 外挂字幕系统
     function srtToVtt(srtText) {
         let srt = srtText.replace(/^\uFEFF/, '').replace(/\r\n|\r/g, '\n');
         return "WEBVTT\n\n" + srt.replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, '$1.$2');
@@ -1332,7 +1356,6 @@
         reader.readAsText(file);
     };
 
-    // 7. YouTube 播放与同步
     function extractYouTubeId(url) {
         const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
         return match ? match[1] : null;
@@ -1390,7 +1413,6 @@
         }
     }
 
-    // 8. X (Twitter) 推文视频提取
     async function extractXVideo(url) {
         const tweetMatch = url.match(/status\/(\d+)/);
         if (!tweetMatch) return null;
@@ -1418,7 +1440,6 @@
         return null;
     }
 
-    // 9. 影视站与常规视频解析
     async function extractAndParseVideo(inputUrl) {
         const url = inputUrl.trim();
 
@@ -1467,7 +1488,6 @@
         return { type: 'direct', finalUrl: url, title: "在线影视" };
     }
 
-    // 10. 音乐解析与智能换源
     function ensureHttps(url) {
         if (!url) return "";
         return url.replace(/^http:\/\//i, "https://");
@@ -1854,7 +1874,7 @@
         }
     }
 
-    // 11. 本地大文件传输（断点续传握手）
+    // 本地大文件传输（断点续传握手）
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
