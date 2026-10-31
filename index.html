@@ -18,7 +18,7 @@
     <!-- 引入 PeerJS 与 Hls.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
-    <!-- 全端全平台专业录音引擎 -->
+    <!-- 全端全平台专业录音引擎 (支持 iOS/Android/PC/微信 全设备高保真录音) -->
     <script src="https://cdn.jsdelivr.net/npm/recorder-core@1.3.24040900/recorder.wav.min.js"></script>
 
     <style>
@@ -242,7 +242,7 @@
             display: none;
         }
 
-        /* 静默官方发声容器 (在底层发声，完全不破坏顶层黑胶界面) */
+        /* 静默官方发声通道 */
         #hiddenOutchainFrame {
             position: absolute;
             width: 1px;
@@ -663,18 +663,22 @@
     let savedMediaVolume = 1;
     let isVolumeDucked = false;
 
-    // 全端兼容 Recorder-core 录音引擎
+    // 录音引擎
     let recorderInstance = null;
     let isRecordingVoice = false;
     let recordStartTime = 0;
     let recordTimerInterval = null;
 
-    // 音乐候选池
+    // 音乐候选池与电台外链模式状态
     let musicCandidatePool = [];
     let currentCandidateIndex = 0;
     let activeMediaStreamUrl = "";
     let isRetryProxyUsed = false;
-    let isOutchainAudioMode = false; // 是否处于电台外链模式
+    let isOutchainAudioMode = false;
+    let outchainVirtualDuration = 0; // 电台真实秒数
+    let outchainCurrentSec = 0;      // 电台当前进度秒数
+    let outchainTickerTimer = null;  // 电台进度走动时钟
+    let currentRawMediaTitle = "";   // 纯净的媒体标题（不带音乐符号）
 
     // 本地传输控制
     let currentSendingFileId = null;
@@ -876,6 +880,7 @@
     window.addEventListener('beforeunload', () => {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (transferWatchdogTimer) clearInterval(transferWatchdogTimer);
+        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
         if (peer) {
             try { peer.destroy(); } catch(e) {}
         }
@@ -1105,6 +1110,19 @@
         conn.on('data', async (data) => {
             if (data.type === 'sync') {
                 isRemoteAction = true;
+                
+                // 处理电台外链模式的同步
+                if (isOutchainAudioMode) {
+                    if (data.action === 'play') {
+                        startOutchainPlayback(false);
+                    } else if (data.action === 'pause') {
+                        pauseOutchainPlayback(false);
+                    }
+                    setTimeout(() => { isRemoteAction = false; }, 250);
+                    return;
+                }
+
+                // 常规媒体同步
                 if (Math.abs(player.currentTime - data.time) > 0.45) {
                     player.currentTime = data.time;
                 }
@@ -1139,7 +1157,7 @@
                 if (data.mediaType === 'youtube') {
                     loadYouTubeVideo(data.url, false);
                 } else if (data.mediaType === 'outchain-dj') {
-                    applyOutchainDjAudio(data.url, data.title, data.pic, false);
+                    applyOutchainDjAudio(data.url, data.title, data.pic, data.durationSec || 0, false);
                 } else {
                     applyMediaSource(data.url, data.isAudio, data.title, data.pic);
                 }
@@ -1627,7 +1645,7 @@
         }
     };
 
-    // 模式切换器：音乐模式下【坚决呈现黑胶唱片界面】
+    // 模式切换器：解决音乐符号累加 BUG 并绝对展示黑胶唱片
     function setUIMode(mode, title = "正在播放...", pic = "") {
         if (mode !== 'video' && player) player.pause();
         if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
@@ -1639,11 +1657,18 @@
         if (mode === 'youtube') {
             ytPlayerContainer.style.display = 'block';
         } else if (mode === 'audio') {
-            // 核心保证：必定展示黑胶唱片！
             musicView.style.display = 'flex';
-            musicTitle.innerText = "🎵 " + title;
-            vinylCenter.style.backgroundImage = pic ? `url('${pic}')` : 'none';
-            vinyl.style.animationPlayState = player.paused ? 'paused' : 'running';
+            // 核心修复：先彻底剥离已有音符，防止点击一次播放累加一个音符！
+            const cleanTitle = (title || "").replace(/^[🎵\s]+/, '').trim() || "正在播放音频...";
+            currentRawMediaTitle = cleanTitle;
+            musicTitle.innerText = "🎵 " + cleanTitle;
+
+            if (pic) {
+                vinylCenter.style.backgroundImage = `url('${pic}')`;
+            } else {
+                vinylCenter.style.backgroundImage = 'none';
+            }
+            vinyl.style.animationPlayState = (player && !player.paused) ? 'running' : 'paused';
         } else {
             player.style.display = 'block';
         }
@@ -1984,14 +2009,14 @@
         }
     }
 
-    // 核心重构：网易云全协议（单曲/电台/播客/外链）解析
+    // 核心重构：网易云全协议解析（并发提取电台封面、真实时长与节目名）
     async function extractAndParseMusic(input) {
         let text = input.trim();
         musicCandidatePool = [];
         songCandidateList.style.display = 'none';
         isOutchainAudioMode = false;
 
-        // 1. 直接原生音频直链（含鉴权参数或纯直链）
+        // 1. 直接音频直链
         const directAudioPattern = /\.(mp3|m4a|flac|wav|aac|ogg)($|\?|#)/i;
         if (directAudioPattern.test(text)) {
             connStatusEl.innerText = "🎵 识别为音频直链，已装入黑胶唱机...";
@@ -2005,7 +2030,7 @@
             };
         }
 
-        // 2. 纯文字搜歌模式
+        // 2. 纯文字搜歌
         if (!text.startsWith('http://') && !text.startsWith('https://') && !text.includes('163.com') && !text.includes('qq.com') && !text.includes('kuwo.cn') && !text.includes('kugou.com')) {
             connStatusEl.innerText = `🔍 正在全网检索歌曲【${text}】并筛选完整免 VIP 音源...`;
             const candidates = await searchMusicCandidates(text);
@@ -2017,7 +2042,7 @@
             }
         }
 
-        // 3. 核心：网易云全协议解析 (电台播客 + 单曲)
+        // 3. 网易云电台播客（解决封面缺失、时长缺失、音符累加）
         const neteaseMatch = text.match(/id=(\d+)/);
         if (text.includes('163.com') && neteaseMatch) {
             const id = neteaseMatch[1];
@@ -2026,29 +2051,31 @@
             connStatusEl.innerText = `🔍 正在解析网易云${isDjProgram ? '电台节目' : '单曲'}...`;
 
             if (isDjProgram) {
-                // 轨 A：先尝试提取底层 mainSong.id
+                let realTitle = "网易云电台播客 (" + id + ")";
+                let coverPic = "";
+                let durationSec = 0;
+
+                // 尝试抓取真实电台节目的封面、时长和标题
                 const proxyEndpoints = [
                     `https://corsproxy.io/?${encodeURIComponent('https://music.163.com/api/dj/program/detail?id=' + id)}`,
-                    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://music.163.com/api/dj/program/detail?id=' + id)}`
+                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://music.163.com/api/dj/program/detail?id=' + id)}`
                 ];
 
                 for (const endpoint of proxyEndpoints) {
                     try {
                         const res = await fetch(endpoint, { signal: AbortSignal.timeout(3000) });
                         const djData = await res.json();
-                        if (djData && djData.program && djData.program.mainSong && djData.program.mainSong.id) {
-                            return {
-                                type: 'direct',
-                                finalUrl: `https://music.163.com/song/media/outer/url?id=${djData.program.mainSong.id}.mp3`,
-                                isAudio: true,
-                                title: djData.program.name || "网易云电台节目",
-                                pic: djData.program.coverUrl || ""
-                            };
+                        if (djData && djData.program) {
+                            realTitle = djData.program.name || realTitle;
+                            coverPic = djData.program.coverUrl || "";
+                            if (djData.program.duration) {
+                                durationSec = Math.round(djData.program.duration / 1000);
+                            }
+                            break;
                         }
                     } catch(e) {}
                 }
 
-                // 轨 B (绝招保底)：激活网易云专属官方静默发声引擎，界面保持黑胶唱片与旋转！
                 let outchainUrl = text;
                 if (!outchainUrl.startsWith('http')) outchainUrl = 'https://' + outchainUrl;
                 if (!outchainUrl.includes('auto=')) outchainUrl += (outchainUrl.includes('?') ? '&' : '?') + 'auto=1&height=66';
@@ -2056,8 +2083,9 @@
                 return {
                     type: 'outchain-dj',
                     url: outchainUrl,
-                    title: `网易云电台播客 (${id})`,
-                    pic: ''
+                    title: realTitle,
+                    pic: coverPic,
+                    durationSec: durationSec
                 };
             }
 
@@ -2072,7 +2100,7 @@
             };
         }
 
-        // 4. QQ 音乐解析
+        // 4. QQ 音乐
         if (text.includes('qq.com')) {
             const midMatch = text.match(/songDetail\/([a-zA-Z0-9]+)/) || text.match(/songmid=([a-zA-Z0-9]+)/);
             if (midMatch) {
@@ -2089,7 +2117,7 @@
             }
         }
 
-        // 5. 酷我音乐解析
+        // 5. 酷我音乐
         if (text.includes('kuwo.cn')) {
             const kuwoMatch = text.match(/(?:play_detail|yinyue)\/(\d+)/);
             if (kuwoMatch) {
@@ -2106,7 +2134,7 @@
             }
         }
 
-        // 6. 酷狗音乐解析
+        // 6. 酷狗音乐
         if (text.includes('kugou.com')) {
             const hashMatch = text.match(/hash=([a-zA-Z0-9]{32})/i) || text.match(/([a-zA-Z0-9]{32})/);
             if (hashMatch) {
@@ -2123,7 +2151,7 @@
             }
         }
 
-        // 7. 原生直链
+        // 7. 直接直链
         const cleanTitle = text.split('/').pop().split('?')[0].replace(/\.[^/.]+$/, "");
         return {
             type: 'direct',
@@ -2134,15 +2162,14 @@
         };
     }
 
-    // 核心黑科技：应用网易云电台底层发声，顶层完全保持黑胶唱片界面与旋转！
-    function applyOutchainDjAudio(url, title, pic, broadcast = true) {
+    // 核心重构：网易云电台播客装载（封面贴图 + 虚拟时钟平稳前进）
+    function applyOutchainDjAudio(url, title, pic, durationSec, broadcast = true) {
         setUIMode('audio', title, pic);
         isOutchainAudioMode = true;
+        outchainVirtualDuration = durationSec || 1800; // 默认30分钟或真实时长
+        durationText.innerText = formatTime(outchainVirtualDuration);
 
-        // 底层静默触发网易云官方发声，顶层黑胶唱片立即开始平稳旋转！
-        hiddenOutchainFrame.src = url;
-        vinyl.style.animationPlayState = 'running';
-        musicPlayBtn.innerText = "⏸";
+        startOutchainPlayback(broadcast);
 
         connStatusEl.innerText = "📻 网易云电台播客已就绪，黑胶唱机正在同步播放！";
         connStatusEl.style.color = "#00c853";
@@ -2152,18 +2179,56 @@
                 type: 'load-url',
                 mediaType: 'outchain-dj',
                 url: url,
-                title: title,
-                pic: pic
+                title: currentRawMediaTitle,
+                pic: pic,
+                durationSec: outchainVirtualDuration
             });
         }
     }
 
+    function startOutchainPlayback(broadcast = true) {
+        vinyl.style.animationPlayState = 'running';
+        musicPlayBtn.innerText = "⏸";
+
+        // 若当前未加载或已暂停，挂载播放
+        const currentUrl = musicUrlInput.value.trim();
+        let targetUrl = currentUrl;
+        if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+        if (!targetUrl.includes('auto=')) targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'auto=1&height=66';
+        if (hiddenOutchainFrame.src !== targetUrl) {
+            hiddenOutchainFrame.src = targetUrl;
+        }
+
+        // 启动平稳虚拟时钟
+        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
+        outchainTickerTimer = setInterval(() => {
+            if (outchainCurrentSec < outchainVirtualDuration) {
+                outchainCurrentSec++;
+                currentTimeText.innerText = formatTime(outchainCurrentSec);
+                musicProgress.value = (outchainCurrentSec / outchainVirtualDuration) * 100;
+            }
+        }, 1000);
+
+        if (broadcast) sendSync('play');
+    }
+
+    function pauseOutchainPlayback(broadcast = true) {
+        vinyl.style.animationPlayState = 'paused';
+        musicPlayBtn.innerText = "▶";
+        hiddenOutchainFrame.src = ""; // 暂停发声
+        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
+
+        if (broadcast) sendSync('pause');
+    }
+
     function applyMediaSource(finalUrl, isAudio, title, pic) {
+        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
+        isOutchainAudioMode = false;
+        hiddenOutchainFrame.src = "";
+
         setUIMode(isAudio ? 'audio' : 'video', title, pic);
         activeMediaStreamUrl = finalUrl;
         isRetryProxyUsed = false;
-        isOutchainAudioMode = false;
-        hiddenOutchainFrame.src = ""; // 停止底层外链
 
         if (finalUrl.includes('.m3u8')) {
             if (Hls.isSupported()) {
@@ -2183,7 +2248,6 @@
         vinyl.style.animationPlayState = 'paused';
     }
 
-    // 播放器自愈引擎：若直链受第三方 CORS 限制，自动代理救活
     player.addEventListener('error', (e) => {
         if (!isRetryProxyUsed && activeMediaStreamUrl && activeMediaStreamUrl.startsWith('http')) {
             isRetryProxyUsed = true;
@@ -2248,9 +2312,9 @@
             return;
         }
 
-        // 触发网易云电台播客专用音画通道
+        // 电台播客装载
         if (result && result.type === 'outchain-dj') {
-            applyOutchainDjAudio(result.url, result.title, result.pic, true);
+            applyOutchainDjAudio(result.url, result.title, result.pic, result.durationSec, true);
             loadMusicBtn.disabled = false;
             loadMusicBtn.innerText = "🎶 万能解析并两端同步播放";
             return;
@@ -2280,27 +2344,19 @@
         loadMusicBtn.innerText = "🎶 万能解析并两端同步播放";
     };
 
-    // 核心黑胶唱机按键操作：完美驱动黑胶旋转与双轨发声
+    // 核心黑胶按键操作
     musicPlayBtn.onclick = () => {
-        // 如果处于电台外链模式
+        // 电台外链模式操作
         if (isOutchainAudioMode) {
             if (vinyl.style.animationPlayState === 'running') {
-                vinyl.style.animationPlayState = 'paused';
-                musicPlayBtn.innerText = "▶";
-                hiddenOutchainFrame.src = ""; // 暂停外链
-                sendSync('pause');
+                pauseOutchainPlayback(true);
             } else {
-                vinyl.style.animationPlayState = 'running';
-                musicPlayBtn.innerText = "⏸";
-                // 重新激发外链发声
-                const currentRaw = musicUrlInput.value.trim();
-                applyOutchainDjAudio(currentRaw, musicTitle.innerText, '', true);
-                sendSync('play');
+                startOutchainPlayback(true);
             }
             return;
         }
 
-        // 常规音频模式
+        // 原生音频模式
         if (!player.src || player.src.endsWith('undefined') || player.src === window.location.href) {
             return alert("请先输入歌名点击【搜歌/解析】，加载有效音源后再点播放！");
         }
@@ -2321,13 +2377,19 @@
 
     musicProgress.oninput = () => {
         isUserSeeking = true;
-        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
+        const totalDuration = isOutchainAudioMode ? outchainVirtualDuration : (player.duration || 0);
+        const seekTime = (musicProgress.value / 100) * totalDuration;
         currentTimeText.innerText = formatTime(seekTime);
     };
 
     musicProgress.onchange = () => {
-        const seekTime = (musicProgress.value / 100) * (player.duration || 0);
-        player.currentTime = seekTime;
+        const totalDuration = isOutchainAudioMode ? outchainVirtualDuration : (player.duration || 0);
+        const seekTime = (musicProgress.value / 100) * totalDuration;
+        if (isOutchainAudioMode) {
+            outchainCurrentSec = Math.round(seekTime);
+        } else {
+            player.currentTime = seekTime;
+        }
         isUserSeeking = false;
     };
 
@@ -2336,7 +2398,7 @@
         volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
     };
 
-    // 黑胶动力学联动：播放时黑胶必定平稳 360° 旋转，暂停时停止
+    // 原生播放器黑胶联动驱动
     player.addEventListener('play', () => {
         vinyl.style.animationPlayState = 'running';
         musicPlayBtn.innerText = "⏸";
@@ -2354,14 +2416,16 @@
     });
 
     player.addEventListener('timeupdate', () => {
-        if (!isUserSeeking && player.duration) {
+        if (!isOutchainAudioMode && !isUserSeeking && player.duration) {
             currentTimeText.innerText = formatTime(player.currentTime);
             musicProgress.value = (player.currentTime / player.duration) * 100;
         }
     });
 
     player.addEventListener('durationchange', () => {
-        durationText.innerText = formatTime(player.duration);
+        if (!isOutchainAudioMode) {
+            durationText.innerText = formatTime(player.duration);
+        }
     });
 
     player.addEventListener('seeked', () => {
@@ -2376,7 +2440,7 @@
             conn.send({
                 type: 'sync',
                 action: action,
-                time: player.currentTime || 0
+                time: player.currentTime || outchainCurrentSec || 0
             });
         }
     }
