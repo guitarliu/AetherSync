@@ -3,12 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- 彻底剥离 Referer 防盗链，解决各大平台音频 403 跨域与格式不兼容解码报错 -->
+    <!-- 彻底剥离 Referer 防盗链 -->
     <meta name="referrer" content="no-referrer">
     <title>SyncDrop - 异地原画影音私密同步</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧🐱</text></svg>">
     
-    <!-- 引入 PeerJS (WebRTC P2P 直连) 与 Hls.js，换用高可用镜像 -->
+    <!-- WebRTC 跨平台兼容垫片：杜绝 browser-incompatible 报错 -->
+    <script>
+        window.RTCPeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+        window.RTCSessionDescription = window.RTCSessionDescription || window.webkitRTCSessionDescription || window.mozRTCSessionDescription;
+        window.RTCIceCandidate = window.RTCIceCandidate || window.webkitRTCIceCandidate || window.mozRTCIceCandidate;
+    </script>
+
+    <!-- 引入 PeerJS (WebRTC P2P 直连) 与 Hls.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
 
@@ -95,7 +102,7 @@
             border-radius: 6px;
         }
 
-        /* 选项卡导航栏（自适应防溢出） */
+        /* 选项卡导航栏 */
         .tabs-nav {
             display: flex;
             background: #12141a;
@@ -230,6 +237,34 @@
             line-height: 1.4;
             border-radius: 4px;
             padding: 2px 6px;
+        }
+
+        /* 微信/移动端点击激活浮窗 */
+        .sync-play-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 20;
+            cursor: pointer;
+        }
+        .sync-play-btn {
+            background: #ff758c;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(255,117,140,0.5);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
         }
 
         #ytPlayerContainer {
@@ -491,7 +526,7 @@
         <div class="status">
             你的配对码 (点击复制): 
             <span id="myId" class="badge" title="点击即可复制">正在获取配对码...</span>
-            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 跨省穿透中继已就绪 · 对称 NAT 穿透保护 · 自动断网续传</div>
+            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 跨省穿透中继已就绪 · 全设备兼容保障 · 自动重连</div>
         </div>
         <div class="row-btn">
             <button id="copyRoomLinkBtn" class="btn-sub">🔗 复制专属房间链接（发给对方一键进入）</button>
@@ -533,7 +568,8 @@
 
         <!-- Tab 3: 本地大文件原画直传 -->
         <div id="tabFile" class="tab-content">
-            <div class="tab-desc">💡 选择本地大电影（MKV/MP4/MOV）或无损音乐。支持<b>断点续传（断网重连不丢进度）</b>与<b>边传边播（无需等待 100% 下载完毕）</b>！</div>
+            <div class="tab-desc">💡 选择本地大电影（MKV/MP4/MOV）或无损音乐。支持<b>断点续传（断网重连不丢进度）</b>！<br>
+            ⚠️ <i>经验提示：手机内存有限，建议传输 1.5GB 内的影片。如遇到十几 G 的超大电影，推荐双方在本地各自点击【选择文件】选择相同片源，实现 0 流量瞬间同步秒播！</i></div>
             <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px; color: #888;">
         </div>
 
@@ -560,6 +596,11 @@
         <div class="player-wrapper">
             <video id="player" controls playsinline webkit-playsinline></video>
             
+            <!-- 微信/移动端解除静音与同步浮窗 -->
+            <div id="syncPlayOverlay" class="sync-play-overlay">
+                <div class="sync-play-btn">▶ 对方已开播，点击同步画面与声音</div>
+            </div>
+
             <div id="ytPlayerContainer">
                 <div id="ytPlayer"></div>
             </div>
@@ -636,16 +677,16 @@
     let musicCandidatePool = [];
     let currentCandidateIndex = 0;
 
-    // 断点续传与边传边播核心状态
-    let currentTransferFileId = null;
+    // 核心传输控制（解决多文件打架与黑屏）
+    let currentSendingFileId = null;
+    let currentSendingTaskId = 0; // 自增任务号，选择新文件时立刻自增废弃旧任务
     let activeSendingFile = null;
-    let isSendingFile = false;
     let isReceivingFile = false;
+    let isFileReadyToPlay = false; // 只有完整合流后才准许解码播放，防止黑屏
     let fileMeta = null;
     let receivedChunks = [];
     let receivedBytes = 0;
     let expectedFileSize = 0;
-    let isPartialLoaded = false;
 
     const myIdEl = document.getElementById('myId');
     const copyRoomLinkBtn = document.getElementById('copyRoomLinkBtn');
@@ -670,6 +711,7 @@
     const sendMsgBtn = document.getElementById('sendMsgBtn');
 
     const player = document.getElementById('player');
+    const syncPlayOverlay = document.getElementById('syncPlayOverlay');
     const ytPlayerContainer = document.getElementById('ytPlayerContainer');
     const progressBox = document.getElementById('progressBox');
     const barFill = document.getElementById('barFill');
@@ -800,7 +842,7 @@
         }
     });
 
-    // 1. 核心修复：引入带凭据的 OpenRelay 全球免费 TURN 服务器，攻破跨省对称型 NAT
+    // 1. PeerJS 初始化与全能 TURN 穿透
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -810,12 +852,10 @@
         peer = new Peer(mySessionId, {
             config: {
                 iceServers: [
-                    // 国内低延迟 STUN
                     { urls: 'stun:stun.miwifi.com:3478' },
                     { urls: 'stun:stun.chat.bilibili.com:3478' },
                     { urls: 'stun:stun.cloudflare.com:3478' },
                     { urls: 'stun:stun.l.google.com:19302' },
-                    // 全球高可用免费 TURN 中继服务器池 (解决手机数据/跨省大内网打洞失败)
                     { urls: 'stun:openrelay.metered.ca:80' },
                     { 
                         urls: 'turn:openrelay.metered.ca:80', 
@@ -857,7 +897,6 @@
         });
 
         peer.on('disconnected', () => {
-            console.warn("信令连接断开，正在自动重新连回信令池...");
             peer.reconnect();
         });
 
@@ -893,7 +932,6 @@
 
         peer.on('connection', incomingConn => {
             if (conn && conn.open && conn.peer !== incomingConn.peer) {
-                console.warn("🔒 检测到第三方尝试接入，防偷听密室已自动拦截！");
                 incomingConn.close();
                 return;
             }
@@ -986,6 +1024,7 @@
         setTimeout(() => connectToPeer(autoTarget), 1000);
     }
 
+    // 2. 数据信道通信
     function bindConnEvents() {
         if (!conn) return;
 
@@ -996,16 +1035,6 @@
             sessionStorage.setItem('syncdrop_tab_last_target', conn.peer);
             connStatusEl.innerText = `🔒 已与【${conn.peer.substring(0, 8)}...】锁定双人专属密室（跨省穿透成功）`;
             connStatusEl.style.color = "#00c853";
-
-            if (activeSendingFile && currentTransferFileId) {
-                conn.send({
-                    type: 'file-start',
-                    fileId: currentTransferFileId,
-                    name: activeSendingFile.name,
-                    size: activeSendingFile.size,
-                    mime: fileMeta ? fileMeta.mime : 'video/mp4'
-                });
-            }
         });
 
         conn.on('close', () => {
@@ -1024,15 +1053,26 @@
         });
 
         conn.on('data', async (data) => {
+            // A. 同步播放
             if (data.type === 'sync') {
+                if (isReceivingFile || !isFileReadyToPlay) {
+                    console.log("文件尚未完整就绪，暂存播放进度:", data.time);
+                    return;
+                }
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.4) {
                     player.currentTime = data.time;
                 }
-                if (data.action === 'play') player.play().catch(()=>{});
+                if (data.action === 'play') {
+                    // 微信/移动端自动播放策略保护：若报错则唤起点击遮罩
+                    player.play().catch(() => {
+                        syncPlayOverlay.style.display = 'flex';
+                    });
+                }
                 if (data.action === 'pause') player.pause();
                 setTimeout(() => isRemoteAction = false, 150);
             }
+            // B. YouTube 专属同步
             else if (data.type === 'yt-sync') {
                 isRemoteAction = true;
                 if (ytPlayer && ytPlayer.getPlayerState) {
@@ -1045,27 +1085,45 @@
                 }
                 setTimeout(() => isRemoteAction = false, 200);
             }
+            // C. 载入媒体源
             else if (data.type === 'load-url') {
+                isFileReadyToPlay = true;
                 if (data.mediaType === 'youtube') {
                     loadYouTubeVideo(data.url, false);
                 } else {
                     applyMediaSource(data.url, data.isAudio, data.title, data.pic);
                 }
             }
+            // D. 接收外挂字幕
             else if (data.type === 'load-subtitle') {
                 applySubtitle(data.content, data.name || "外挂字幕");
             }
+            // E. 接收文字与语音
             else if (data.type === 'chat-msg') {
                 renderChatMessage(data.text, false);
             }
             else if (data.type === 'chat-voice') {
                 renderVoiceMessage(data.audioData, data.duration, false);
             }
+            // F. 核心协议：发片方切换了新文件，强制中止并清理接收端旧文件状态！
+            else if (data.type === 'file-cancel') {
+                console.log("对端取消或切换了文件，重置接收端状态");
+                isReceivingFile = false;
+                isFileReadyToPlay = false;
+                receivedChunks = [];
+                receivedBytes = 0;
+                expectedFileSize = 0;
+                barFill.style.width = '0%';
+                transPercent.innerText = '0%';
+                transStatus.innerText = "对方切换了新片源，正在准备重新接收...";
+            }
+            // G. 文件传输开始（比对断点）
             else if (data.type === 'file-start') {
                 fileMeta = data;
-                currentTransferFileId = data.fileId;
+                currentSendingFileId = data.fileId;
                 expectedFileSize = data.size;
                 isReceivingFile = true;
+                isFileReadyToPlay = false;
                 progressBox.style.display = 'block';
 
                 const savedDiskChunks = await getSavedChunksFromDisk(data.fileId);
@@ -1088,7 +1146,6 @@
 
                 if (resumeFromIndex > 0) {
                     transStatus.innerText = `⚡ 检测到历史缓存（已完成 ${currentPercent}%），正在继续断点续传...`;
-                    tryProgressivePlayback();
                 } else {
                     transStatus.innerText = `正在接收原画【${data.name}】...`;
                 }
@@ -1100,12 +1157,14 @@
                 });
             }
             else if (data.type === 'file-resume-ack') {
-                if (activeSendingFile && activeSendingFile.fileId === data.fileId) {
+                if (activeSendingFile && currentSendingFileId === data.fileId) {
                     resumeFileStream(data.resumeIndex);
                 }
             }
+            // H. 接收二进制切片
             else if (data.type === 'file-chunk') {
-                if (data.fileId !== currentTransferFileId) return;
+                // 如果接收到的切片不属于当前文件，直接丢弃（避免旧文件残留切片污染）
+                if (data.fileId !== currentSendingFileId) return;
 
                 receivedChunks[data.index] = data.chunk;
                 receivedBytes += data.chunk.byteLength;
@@ -1115,10 +1174,7 @@
                 barFill.style.width = percent + '%';
                 transPercent.innerText = percent + '%';
 
-                if (!isPartialLoaded && percent >= 15) {
-                    tryProgressivePlayback();
-                }
-
+                // 核心修复：100% 完整收齐并包含索引头后，才一次性合流播放，杜绝黑屏！
                 if (receivedBytes >= expectedFileSize || percent >= 100) {
                     isReceivingFile = false;
                     transStatus.innerText = "🎉 100% 原画原声传输完毕！双方已全速就绪";
@@ -1127,6 +1183,36 @@
             }
         });
     }
+
+    // 接收端 100% 完整合流
+    function finalizeCompletePlayback() {
+        try {
+            const validChunks = receivedChunks.filter(c => c !== undefined && c !== null);
+            let targetMime = fileMeta ? fileMeta.mime : 'video/mp4';
+            if (fileMeta && fileMeta.name.toLowerCase().endsWith('.mov')) targetMime = 'video/mp4';
+
+            const completeBlob = new Blob(validChunks, { type: targetMime });
+            player.src = URL.createObjectURL(completeBlob);
+            setUIMode('video', fileMeta ? fileMeta.name : '');
+
+            player.onloadeddata = () => {
+                isFileReadyToPlay = true;
+                transStatus.innerText = "✅ 视频解码成功，画面与声音已就绪！";
+                // 尝试直接播放，微信拦截则弹出遮罩
+                player.play().catch(() => {
+                    syncPlayOverlay.style.display = 'flex';
+                });
+            };
+        } catch(e) {
+            alert("视频组装失败，可能手机内存受限，建议刷新重试！");
+        }
+    }
+
+    // 点击微信同步播放浮窗
+    syncPlayOverlay.onclick = () => {
+        syncPlayOverlay.style.display = 'none';
+        player.play().catch(()=>{});
+    };
 
     function sendTextMessage() {
         const text = chatInput.value.trim();
@@ -1248,46 +1334,6 @@
         }
     };
 
-    function tryProgressivePlayback() {
-        if (receivedChunks.length === 0) return;
-        try {
-            const validChunks = receivedChunks.filter(c => c !== undefined && c !== null);
-            let targetMime = fileMeta ? fileMeta.mime : 'video/mp4';
-            if (fileMeta && fileMeta.name.toLowerCase().endsWith('.mov')) targetMime = 'video/mp4';
-
-            const partialBlob = new Blob(validChunks, { type: targetMime });
-            const oldTime = player.currentTime || 0;
-            const wasPlaying = !player.paused;
-
-            player.src = URL.createObjectURL(partialBlob);
-            setUIMode('video', fileMeta ? fileMeta.name : '');
-            isPartialLoaded = true;
-
-            player.onloadedmetadata = () => {
-                if (oldTime > 0) player.currentTime = oldTime;
-                if (wasPlaying) player.play().catch(()=>{});
-            };
-        } catch(e) {}
-    }
-
-    function finalizeCompletePlayback() {
-        try {
-            const validChunks = receivedChunks.filter(c => c !== undefined && c !== null);
-            let targetMime = fileMeta ? fileMeta.mime : 'video/mp4';
-            if (fileMeta && fileMeta.name.toLowerCase().endsWith('.mov')) targetMime = 'video/mp4';
-
-            const completeBlob = new Blob(validChunks, { type: targetMime });
-            const preserveTime = player.currentTime || 0;
-            const isPlaying = !player.paused;
-
-            player.src = URL.createObjectURL(completeBlob);
-            player.onloadeddata = () => {
-                if (preserveTime > 0) player.currentTime = preserveTime;
-                if (isPlaying) player.play().catch(()=>{});
-            };
-        } catch(e) {}
-    }
-
     function setUIMode(mode, title = "正在播放...", pic = "") {
         if (mode !== 'video' && player) player.pause();
         if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
@@ -1365,7 +1411,6 @@
         reader.readAsText(file);
     };
 
-    // 核心优化：按需异步加载 YouTube IFrame API，绝不阻塞国内正常网页加载
     function loadYouTubeApiIfNeeded() {
         return new Promise((resolve) => {
             if (window.YT && window.YT.Player) {
@@ -1907,11 +1952,20 @@
         }
     }
 
+    // 核心重构：本地文件切换时的取消机制与防打架保护
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
             if (!conn || !conn.open) alert("请先成功建立双人连接！");
             return;
+        }
+
+        // 步骤 1：立即终止任何正在进行的旧任务
+        currentSendingTaskId++; // 废除旧循环
+        const thisTaskId = currentSendingTaskId;
+
+        if (conn && conn.open) {
+            conn.send({ type: 'file-cancel' }); // 通知接收端重置状态，防止前后文件切片打架
         }
 
         const isAudio = file.type.startsWith('audio') || file.name.match(/\.(mp3|flac|wav|m4a|aac)$/i);
@@ -1924,10 +1978,15 @@
         const fileId = `${file.name}_${file.size}`;
         file.fileId = fileId;
         activeSendingFile = file;
-        currentTransferFileId = fileId;
-        isSendingFile = true;
+        currentSendingFileId = fileId;
+        isFileReadyToPlay = true;
 
         player.src = URL.createObjectURL(file);
+
+        // 大文件温馨提示
+        if (file.size > 1.5 * 1024 * 1024 * 1024) {
+            alert(`⚠️ 当前文件较大（${(file.size/(1024*1024*1024)).toFixed(1)} GB）！\n受手机内存限制，对方若使用手机微信可能会较慢或卡退。\n建议双方各自选择该文件秒播，或传输 1.5GB 内的文件。`);
+        }
 
         conn.send({
             type: 'file-start',
@@ -1944,15 +2003,21 @@
     function resumeFileStream(startIndex = 0) {
         if (!activeSendingFile) return;
 
+        const thisTaskId = currentSendingTaskId;
         let currentChunkIndex = startIndex;
         const totalChunks = Math.ceil(activeSendingFile.size / CHUNK_SIZE);
         const reader = new FileReader();
 
         function sendNext() {
-            if (!conn || !conn.open || !isSendingFile) return;
+            // 关键：若用户切换了文件，本任务已被作废，立即退出
+            if (thisTaskId !== currentSendingTaskId) {
+                console.log("旧传输任务已终止");
+                return;
+            }
+
+            if (!conn || !conn.open) return;
 
             if (currentChunkIndex >= totalChunks) {
-                isSendingFile = false;
                 transStatus.innerText = "✅ 原画原声传输完毕！双方均已就绪";
                 return;
             }
@@ -1961,6 +2026,7 @@
             const slice = activeSendingFile.slice(offset, offset + CHUNK_SIZE);
 
             reader.onload = (evt) => {
+                if (thisTaskId !== currentSendingTaskId) return;
                 if (!conn || !conn.open) return;
 
                 conn.send({
@@ -1974,7 +2040,7 @@
                 const percent = Math.min(100, Math.round((currentChunkIndex / totalChunks) * 100));
                 barFill.style.width = percent + '%';
                 transPercent.innerText = percent + '%';
-                transStatus.innerText = `正在传输原件 (${percent}%)... 支持边传边播与断点续传`;
+                transStatus.innerText = `正在传输原件 (${percent}%)...`;
 
                 if (conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
                     setTimeout(sendNext, 40);
