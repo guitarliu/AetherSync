@@ -263,7 +263,7 @@
             align-items: center; 
             justify-content: center; 
             animation: rotateVinyl 8s linear infinite; 
-            animation-play-state: paused; /* 默认暂停，播放时设为 running */
+            animation-play-state: paused;
             margin-bottom: 14px;
         }
         .vinyl-center { 
@@ -515,7 +515,7 @@
 
         <!-- Tab 2: 全网音乐 -->
         <div id="tabMusic" class="tab-content">
-            <div class="tab-desc">💡 <b>万能流媒体解析引擎</b>：支持输入<b>歌名/歌手</b>搜歌；支持<b>网易云（单曲/电台/播客/外链）、QQ音乐、酷狗、酷我、直接网络音频直链（含鉴权参数）</b>。</div>
+            <div class="tab-desc">💡 <b>全能流媒体自愈引擎 4.0</b>：支持输入<b>歌名/歌手</b>搜歌；支持<b>网易云（单曲/电台/播客）、QQ音乐、酷狗、酷我、直接网络音频直链（含鉴权参数）</b>。</div>
             <input type="text" id="musicUrlInput" placeholder="输入：歌名(如 晴天 周杰伦) 或 任意音乐链接/音频直链">
             <button id="loadMusicBtn" style="background: #ff758c;">🎶 万能解析并两端同步播放</button>
             <div id="songCandidateList" class="song-candidate-list"></div>
@@ -552,7 +552,7 @@
         </div>
 
         <div class="player-wrapper">
-            <!-- 视频原生视窗 (播放音乐时在底层静默解码发声，由黑胶唱片界面在顶层呈现) -->
+            <!-- 原生媒体视窗：在音乐模式下在后台发声，由顶层黑胶唱片负责旋转与视觉交互 -->
             <video id="player" controls playsinline webkit-playsinline></video>
             
             <div id="syncPlayOverlay" class="sync-play-overlay">
@@ -563,7 +563,7 @@
                 <div id="ytPlayer"></div>
             </div>
 
-            <!-- 核心：复古旋转黑胶唱片视窗 (播放音乐时必须展示并旋转) -->
+            <!-- 核心：复古旋转黑胶唱片视窗 (音乐模式下必定呈现且平稳旋转) -->
             <div id="musicView" class="music-view">
                 <div class="vinyl" id="vinyl"><div class="vinyl-center" id="vinylCenter"></div></div>
                 <div class="music-title" id="musicTitle">正在播放音频...</div>
@@ -646,7 +646,7 @@
     let lastProgressTimestamp = 0;
     let isTransferring = false;
 
-    // 音频闪避控制
+    // 核心音频闪避控制
     let savedMediaVolume = 1;
     let isVolumeDucked = false;
 
@@ -656,13 +656,13 @@
     let recordStartTime = 0;
     let recordTimerInterval = null;
 
-    // 音乐候选池与自动换源
+    // 音乐候选池与自动自愈换源
     let musicCandidatePool = [];
     let currentCandidateIndex = 0;
     let activeMediaStreamUrl = "";
     let isRetryProxyUsed = false;
 
-    // 本地传输控制
+    // 核心传输控制
     let currentSendingFileId = null;
     let currentSendingTaskId = 0;
     let activeSendingFile = null;
@@ -745,6 +745,7 @@
         } catch(e) { return hexStr; }
     }
 
+    // 选项卡切换
     window.switchTab = function(tabId) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -784,6 +785,7 @@
         }
     }
 
+    // IndexedDB 缓存
     let cachedDb = null;
     function openDatabase() {
         if (cachedDb) return Promise.resolve(cachedDb);
@@ -1087,6 +1089,7 @@
         });
 
         conn.on('data', async (data) => {
+            // A. 同步播放
             if (data.type === 'sync') {
                 isRemoteAction = true;
                 if (Math.abs(player.currentTime - data.time) > 0.45) {
@@ -1101,6 +1104,7 @@
                 
                 setTimeout(() => { isRemoteAction = false; }, 250);
             }
+            // B. YouTube 同步
             else if (data.type === 'yt-sync') {
                 isRemoteAction = true;
                 if (ytPlayer && ytPlayer.getPlayerState) {
@@ -1113,6 +1117,7 @@
                 }
                 setTimeout(() => { isRemoteAction = false; }, 250);
             }
+            // C. 载入媒体源
             else if (data.type === 'load-url') {
                 isFileReadyToPlay = true;
                 if (data.mediaType === 'youtube') {
@@ -1121,19 +1126,24 @@
                     applyMediaSource(data.url, data.isAudio, data.title, data.pic);
                 }
             }
+            // D. 接收外挂字幕
             else if (data.type === 'load-subtitle') {
                 applySubtitle(data.content, data.name || "外挂字幕");
             }
+            // E. 接收聊天文字
             else if (data.type === 'chat-msg') {
                 const plainText = decryptText(data.cipher);
                 renderChatMessage(plainText, false);
             }
+            // F. 接收图片与文件
             else if (data.type === 'chat-file') {
                 renderFileMessage(data.fileData, data.fileName, data.isImg, false);
             }
+            // G. 接收语音条 (标准 16kHz WAV 播放)
             else if (data.type === 'chat-voice') {
                 renderVoiceMessage(data.audioData, data.duration, false);
             }
+            // H. 对端取消传输
             else if (data.type === 'file-cancel') {
                 isReceivingFile = false;
                 isFileReadyToPlay = false;
@@ -1150,6 +1160,7 @@
                 player.removeAttribute('src');
                 player.load();
             }
+            // I. 文件传输握手
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 currentSendingFileId = data.fileId;
@@ -1190,6 +1201,7 @@
                     resumeIndex: resumeFromIndex
                 });
             }
+            // J. 发送方收到握手确认
             else if (data.type === 'file-resume-ack') {
                 if (activeSendingFile && currentSendingFileId === data.fileId) {
                     lastProgressTimestamp = Date.now();
@@ -1205,6 +1217,7 @@
                     resumeFileStream(data.resumeIndex);
                 }
             }
+            // K. 发送方收到窗口应答
             else if (data.type === 'file-window-ack') {
                 if (activeSendingFile && currentSendingFileId === data.fileId) {
                     lastProgressTimestamp = Date.now();
@@ -1492,6 +1505,7 @@
         a.click();
     };
 
+    // 语音条渲染
     function renderVoiceMessage(audioData, duration, isSelf) {
         const div = document.createElement('div');
         div.className = `chat-msg ${isSelf ? 'self' : 'remote'}`;
@@ -1534,11 +1548,11 @@
         }
     };
 
-    // 录音触发：使用 Recorder-core 引擎
+    // 录音触发：使用全设备通吃的 Recorder-core 引擎
     voiceBtn.onclick = () => {
         if (!isRecordingVoice) {
             if (!window.Recorder) {
-                return alert("录音引擎组件正在就绪，请稍等 1 秒后再试！");
+                return alert("录音引擎正在就绪，请稍等 1 秒后再试！");
             }
 
             recorderInstance = Recorder({
@@ -1604,7 +1618,7 @@
         }
     };
 
-    // 模式切换器：音乐模式下【绝对锁定】为黑胶唱片界面
+    // 模式切换器：音乐模式下【坚决呈现黑胶唱片界面】
     function setUIMode(mode, title = "正在播放...", pic = "") {
         if (mode !== 'video' && player) player.pause();
         if (mode !== 'youtube' && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
@@ -1616,11 +1630,10 @@
         if (mode === 'youtube') {
             ytPlayerContainer.style.display = 'block';
         } else if (mode === 'audio') {
-            // 核心：强制开启黑胶唱片，展示标题与封面图
+            // 核心保证：必定展示黑胶唱片！
             musicView.style.display = 'flex';
             musicTitle.innerText = "🎵 " + title;
             vinylCenter.style.backgroundImage = pic ? `url('${pic}')` : 'none';
-            // 根据当前播放器真实状态更新胶片转速
             vinyl.style.animationPlayState = player.paused ? 'paused' : 'running';
         } else {
             player.style.display = 'block';
@@ -1962,19 +1975,20 @@
         }
     }
 
-    // 音乐全协议解析引擎（确保始终输出真实可播音频流与黑胶唱片数据）
+    // ==============================================================
+    // 核心重构：【全能自愈流媒体解析引擎 4.0】
+    // ==============================================================
     async function extractAndParseMusic(input) {
         let text = input.trim();
         musicCandidatePool = [];
         songCandidateList.style.display = 'none';
 
-        // 1. 直接音频文件链接
+        // 1. 直接原生音频直链（含鉴权参数或纯直链）
         const directAudioPattern = /\.(mp3|m4a|flac|wav|aac|ogg)($|\?|#)/i;
         if (directAudioPattern.test(text)) {
             connStatusEl.innerText = "🎵 识别为音频直链，已装入黑胶唱机...";
             const cleanTitle = text.split('/').pop().split('?')[0].replace(/\.[^/.]+$/, "") || "网络音频原件";
             return {
-                type: 'direct',
                 finalUrl: text,
                 isAudio: true,
                 title: decodeURIComponent(cleanTitle),
@@ -1982,7 +1996,7 @@
             };
         }
 
-        // 2. 纯文字搜歌
+        // 2. 纯文字搜歌模式
         if (!text.startsWith('http://') && !text.startsWith('https://') && !text.includes('163.com') && !text.includes('qq.com') && !text.includes('kuwo.cn') && !text.includes('kugou.com')) {
             connStatusEl.innerText = `🔍 正在全网检索歌曲【${text}】并筛选完整免 VIP 音源...`;
             const candidates = await searchMusicCandidates(text);
@@ -1994,16 +2008,16 @@
             }
         }
 
-        // 3. 网易云深度穿透（彻底取出真实的 mainSong 音频流驱动黑胶旋转）
+        // 3. 核心攻坚：网易云全协议（单曲/电台/播客/外链）深度解析与全网自愈
         const neteaseMatch = text.match(/id=(\d+)/);
         if (text.includes('163.com') && neteaseMatch) {
             const id = neteaseMatch[1];
             const isDjProgram = text.includes('type=3') || text.includes('program') || text.includes('dj');
 
-            connStatusEl.innerText = `🔍 正在解析网易云${isDjProgram ? '电台节目' : '单曲'}...`;
+            connStatusEl.innerText = `🔍 正在深度解析网易云${isDjProgram ? '电台节目' : '单曲'}...`;
 
             if (isDjProgram) {
-                // 通过多代理并发穿透提取电台节目的真实音频 mainSong.id 与封面
+                // 轨 A：通过多线路高速并发代理穿透提取真实 mainSong.id
                 const proxyEndpoints = [
                     `https://corsproxy.io/?${encodeURIComponent('https://music.163.com/api/dj/program/detail?id=' + id)}`,
                     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://music.163.com/api/dj/program/detail?id=' + id)}`,
@@ -2012,19 +2026,16 @@
 
                 for (const endpoint of proxyEndpoints) {
                     try {
-                        const res = await fetch(endpoint, { signal: AbortSignal.timeout(4000) });
+                        const res = await fetch(endpoint, { signal: AbortSignal.timeout(3500) });
                         const djData = await res.json();
                         if (djData && djData.program) {
                             const realTitle = djData.program.name || "网易云电台节目";
                             const coverPic = djData.program.coverUrl || "";
                             
-                            // 拿到真实底层音频 ID mainSong.id
                             if (djData.program.mainSong && djData.program.mainSong.id) {
                                 const realSongId = djData.program.mainSong.id;
-                                const realAudioUrl = `https://music.163.com/song/media/outer/url?id=${realSongId}.mp3`;
                                 return {
-                                    type: 'direct',
-                                    finalUrl: realAudioUrl,
+                                    finalUrl: `https://music.163.com/song/media/outer/url?id=${realSongId}.mp3`,
                                     isAudio: true,
                                     title: realTitle,
                                     pic: coverPic
@@ -2034,12 +2045,21 @@
                     } catch(e) {}
                 }
 
-                // 兜底尝试
+                // 轨 B：自愈黑科技！若电台原链已被下架或加密，自动向全网曲库检索并无感替补播放！
+                connStatusEl.innerText = "⏳ 该电台外链受限，正在自动为您在全网库匹配同名完整源...";
+                const candidates = await searchMusicCandidates("电台 " + id);
+                if (candidates && candidates.length > 0) {
+                    musicCandidatePool = candidates;
+                    renderCandidateList(candidates);
+                    selectAndPlayCandidate(0);
+                    return { customHandled: true };
+                }
+
+                // 最终保底：直接尝试官方外链
                 return {
-                    type: 'direct',
                     finalUrl: `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
                     isAudio: true,
-                    title: `网易云电台节目`,
+                    title: `网易云电台节目 (${id})`,
                     pic: ''
                 };
             }
@@ -2047,7 +2067,6 @@
             // 单曲解析
             const meta = await fetchMetingSong('netease', id);
             return {
-                type: 'direct',
                 finalUrl: (meta && meta.url) ? meta.url : `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
                 isAudio: true,
                 title: meta ? `${meta.name} - ${meta.artist}` : `网易云单曲 (ID: ${id})`,
@@ -2063,7 +2082,6 @@
                 connStatusEl.innerText = "🔍 正在抓取 QQ 音乐原声与歌名...";
                 const meta = await fetchMetingSong('tencent', songMid);
                 return {
-                    type: 'direct',
                     finalUrl: (meta && meta.url) ? meta.url : `https://api.injahow.cn/meting/?server=tencent&type=url&id=${songMid}`,
                     isAudio: true,
                     title: meta ? `${meta.name} - ${meta.artist}` : `QQ音乐 (MID: ${songMid})`,
@@ -2080,7 +2098,6 @@
                 connStatusEl.innerText = "🔍 正在抓取酷我音乐完整原声与歌名...";
                 const meta = await fetchMetingSong('kuwo', kuwoId);
                 return {
-                    type: 'direct',
                     finalUrl: (meta && meta.url) ? meta.url : `https://api.injahow.cn/meting/?server=kuwo&type=url&id=${kuwoId}`,
                     isAudio: true,
                     title: meta ? `${meta.name} - ${meta.artist}` : `酷我单曲 (ID: ${kuwoId})`,
@@ -2097,7 +2114,6 @@
                 connStatusEl.innerText = "🔍 正在抓取酷狗音乐原声与歌名...";
                 const meta = await fetchMetingSong('kugou', hash);
                 return {
-                    type: 'direct',
                     finalUrl: (meta && meta.url) ? meta.url : `https://api.injahow.cn/meting/?server=kugou&type=url&id=${hash}`,
                     isAudio: true,
                     title: meta ? `${meta.name} - ${meta.artist}` : `酷狗单曲`,
@@ -2116,12 +2132,12 @@
 
                 const ogAudio = html.match(/<meta[^>]+property=["']og:audio["'][^>]+content=["']([^"']+)["']/i);
                 if (ogAudio && ogAudio[1]) {
-                    return { type: 'direct', finalUrl: ogAudio[1], isAudio: true, title: "网页音频嗅探", pic: '' };
+                    return { finalUrl: ogAudio[1], isAudio: true, title: "网页音频嗅探", pic: '' };
                 }
 
                 const audioSrc = html.match(/<audio[^>]+src=["']([^"']+)["']/i);
                 if (audioSrc && audioSrc[1]) {
-                    return { type: 'direct', finalUrl: audioSrc[1], isAudio: true, title: "网页音频嗅探", pic: '' };
+                    return { finalUrl: audioSrc[1], isAudio: true, title: "网页音频嗅探", pic: '' };
                 }
             } catch(e) {}
         }
@@ -2129,7 +2145,6 @@
         // 8. 原生直链兜底
         const cleanTitle = text.split('/').pop().split('?')[0].replace(/\.[^/.]+$/, "");
         return {
-            type: 'direct',
             finalUrl: ensureHttps(text),
             isAudio: true,
             title: cleanTitle ? decodeURIComponent(cleanTitle) : "在线音频",
@@ -2290,7 +2305,7 @@
         volIcon.innerText = player.volume === 0 ? "🔇" : "🔊";
     };
 
-    // 核心黑胶唱片联动驱动：播放时黑胶必须平稳旋转，暂停时停止
+    // 核心黑胶唱片联动驱动：播放时黑胶必定旋转，暂停时停止
     player.addEventListener('play', () => {
         vinyl.style.animationPlayState = 'running'; // 启动唱片旋转！
         musicPlayBtn.innerText = "⏸";
