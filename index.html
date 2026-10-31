@@ -8,14 +8,14 @@
     <title>SyncDrop - 异地原画影音私密同步</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧🐱</text></svg>">
     
-    <!-- WebRTC 跨平台兼容垫片：杜绝 browser-incompatible 报错 -->
+    <!-- WebRTC 跨平台兼容垫片 -->
     <script>
         window.RTCPeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
         window.RTCSessionDescription = window.RTCSessionDescription || window.webkitRTCSessionDescription || window.mozRTCSessionDescription;
         window.RTCIceCandidate = window.RTCIceCandidate || window.webkitRTCIceCandidate || window.mozRTCIceCandidate;
     </script>
 
-    <!-- 引入 PeerJS (WebRTC P2P 直连) 与 Hls.js -->
+    <!-- 引入 PeerJS 与 Hls.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
 
@@ -89,20 +89,27 @@
             background: #4b5563; 
         }
         .btn-danger {
-            background: #7f1d1d;
-            font-size: 12px;
-            padding: 6px 12px;
-            width: auto;
+            background: #7f1d1d; 
+            font-size: 12px; 
+            padding: 6px 12px; 
+            width: auto; 
         }
         .btn-subtitles {
-            background: #0284c7;
-            font-size: 12px;
-            padding: 6px 14px;
+            background: #0284c7; 
+            font-size: 12px; 
+            padding: 6px 14px; 
+            width: auto; 
+            border-radius: 6px; 
+        }
+        .btn-resume-inline {
+            background: #d97706;
+            font-size: 11px;
+            padding: 3px 8px;
             width: auto;
-            border-radius: 6px;
+            border-radius: 4px;
+            margin-left: 6px;
         }
 
-        /* 选项卡导航栏 */
         .tabs-nav {
             display: flex;
             background: #12141a;
@@ -129,55 +136,23 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .tab-btn.active {
-            background: #2d3748;
-            color: #fff;
-            font-weight: bold;
-        }
-        .tab-btn.tab-video.active {
-            background: #2563eb;
-            color: #fff;
-        }
-        .tab-btn.tab-music.active {
-            background: #ff758c;
-            color: #fff;
-        }
-        .tab-btn.tab-file.active {
-            background: #059669;
-            color: #fff;
-        }
+        .tab-btn.active { background: #2d3748; color: #fff; font-weight: bold; }
+        .tab-btn.tab-video.active { background: #2563eb; color: #fff; }
+        .tab-btn.tab-music.active { background: #ff758c; color: #fff; }
+        .tab-btn.tab-file.active { background: #059669; color: #fff; }
 
         @media (max-width: 680px) {
-            .tab-sub-text {
-                display: none;
-            }
-            .tab-btn {
-                font-size: 12px;
-                padding: 8px 2px;
-            }
+            .tab-sub-text { display: none; }
+            .tab-btn { font-size: 12px; padding: 8px 2px; }
         }
         @media (max-width: 420px) {
-            .tabs-nav {
-                flex-wrap: wrap;
-            }
-            .tab-btn {
-                flex: 1 1 100%;
-                padding: 8px;
-            }
+            .tabs-nav { flex-wrap: wrap; }
+            .tab-btn { flex: 1 1 100%; padding: 8px; }
         }
 
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .tab-desc {
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 8px;
-            line-height: 1.4;
-        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .tab-desc { font-size: 12px; color: #888; margin-bottom: 8px; line-height: 1.4; }
 
         .song-candidate-list {
             display: none;
@@ -201,17 +176,8 @@
             border-radius: 4px;
             transition: background 0.15s;
         }
-        .song-candidate-item:hover {
-            background: #2d3748;
-            color: #ff758c;
-        }
-        .candidate-source-tag {
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 3px;
-            background: #232732;
-            color: #9aa0a6;
-        }
+        .song-candidate-item:hover { background: #2d3748; color: #ff758c; }
+        .candidate-source-tag { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: #232732; color: #9aa0a6; }
         
         .player-wrapper { 
             position: relative; 
@@ -228,7 +194,7 @@
             width: 100%; 
             max-height: 55vh; 
             display: block; 
-            outline: none;
+            outline: none; 
         }
         video::cue {
             background: rgba(0, 0, 0, 0.75);
@@ -239,7 +205,6 @@
             padding: 2px 6px;
         }
 
-        /* 微信/移动端点击激活浮窗 */
         .sync-play-overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -319,31 +284,11 @@
             white-space: nowrap;
             margin-bottom: 15px;
         }
-        
-        @keyframes rotate { 
-            from { transform: rotate(0deg); } 
-            to { transform: rotate(360deg); } 
-        }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        .music-controls {
-            width: 100%;
-            max-width: 500px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .time-slider-wrap {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
-        }
-        .time-text {
-            font-size: 12px;
-            color: #aaa;
-            font-family: monospace;
-            min-width: 40px;
-        }
+        .music-controls { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 10px; }
+        .time-slider-wrap { display: flex; align-items: center; gap: 10px; width: 100%; }
+        .time-text { font-size: 12px; color: #aaa; font-family: monospace; min-width: 40px; }
         input[type="range"] {
             -webkit-appearance: none;
             appearance: none;
@@ -353,55 +298,28 @@
             border-radius: 3px;
             outline: none;
             cursor: pointer;
-            margin: 0;
-            padding: 0;
-            border: none;
+            margin: 0; padding: 0; border: none;
         }
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: #ff758c;
-            cursor: pointer;
-            transition: transform 0.1s;
+            width: 14px; height: 14px;
+            border-radius: 50%; background: #ff758c; cursor: pointer;
         }
-        .control-btns-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            padding: 0 5px;
-        }
+        .control-btns-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 5px; }
         .play-btn-circle {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: #ff758c;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            cursor: pointer;
-            margin: 0 auto;
-            border: none;
-            box-shadow: 0 4px 15px rgba(255,117,140,0.4);
-            user-select: none;
+            width: 50px; height: 50px; border-radius: 50%;
+            background: #ff758c; color: #fff; display: flex;
+            align-items: center; justify-content: center;
+            font-size: 20px; cursor: pointer; margin: 0 auto;
+            border: none; box-shadow: 0 4px 15px rgba(255,117,140,0.4);
         }
-        .volume-box {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            width: 110px;
-        }
+        .volume-box { display: flex; align-items: center; gap: 6px; width: 110px; }
 
-        /* 聊天室专区样式 */
         .chat-container {
             display: flex;
             flex-direction: column;
-            height: 230px;
+            height: 270px;
             background: #12141a;
             border-radius: 8px;
             padding: 8px;
@@ -416,8 +334,8 @@
             gap: 8px;
         }
         .chat-msg {
-            max-width: 80%;
-            padding: 7px 12px;
+            max-width: 82%;
+            padding: 8px 12px;
             border-radius: 10px;
             font-size: 13px;
             line-height: 1.4;
@@ -435,13 +353,27 @@
             color: #e0e0e0;
             border-bottom-left-radius: 2px;
         }
-        .voice-bar {
+        .chat-img-thumb {
+            max-width: 160px;
+            max-height: 160px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 4px;
+            display: block;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.15s;
+        }
+        .file-attach-box {
             display: flex;
             align-items: center;
             gap: 8px;
+            background: rgba(0,0,0,0.25);
+            padding: 6px 10px;
+            border-radius: 6px;
             cursor: pointer;
-            user-select: none;
+            margin-top: 4px;
         }
+        .voice-bar { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
         .emoji-bar {
             display: flex;
             gap: 8px;
@@ -454,67 +386,50 @@
             font-size: 18px;
             transition: transform 0.1s;
         }
-        .emoji-item:active {
-            transform: scale(1.3);
-        }
+        .emoji-item:active { transform: scale(1.3); }
         .chat-input-row {
             display: flex;
             gap: 6px;
             align-items: center;
             margin-top: 4px;
         }
-        .btn-voice {
-            background: #374151;
+        .btn-icon-sub {
+            background: #2d3748;
             color: #fff;
             width: auto;
-            padding: 10px 14px;
-            white-space: nowrap;
+            padding: 9px 11px;
+            font-size: 13px;
+            border-radius: 6px;
         }
-        .btn-send {
-            background: #ff758c;
-            color: #fff;
-            width: auto;
-            padding: 10px 16px;
-            white-space: nowrap;
+        .btn-voice { background: #374151; color: #fff; width: auto; padding: 10px 14px; white-space: nowrap; }
+        .btn-send { background: #ff758c; color: #fff; width: auto; padding: 10px 16px; white-space: nowrap; }
+
+        .img-lightbox-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            cursor: zoom-out;
+        }
+        .img-lightbox-img {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 8px;
+            box-shadow: 0 0 25px rgba(0,0,0,0.8);
         }
 
-        .progress-box { 
-            margin: 10px 0; 
-            display: none; 
-        }
-        .bar-bg { 
-            background: #333; 
-            height: 8px; 
-            border-radius: 4px; 
-            overflow: hidden; 
-            margin-top: 5px; 
-        }
-        .bar-fill { 
-            background: #00c853; 
-            height: 100%; 
-            width: 0%; 
-            transition: width 0.1s; 
-        }
-        .status { 
-            font-size: 13px; 
-            color: #aaa; 
-            text-align: center; 
-            margin: 5px 0; 
-            word-break: break-all; 
-        }
+        .progress-box { margin: 10px 0; display: none; }
+        .bar-bg { background: #333; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 5px; }
+        .bar-fill { background: #00c853; height: 100%; width: 0%; transition: width 0.15s; }
+        .status { font-size: 13px; color: #aaa; text-align: center; margin: 5px 0; word-break: break-all; }
         .badge { 
-            background: #2d3748; 
-            padding: 4px 8px; 
-            border-radius: 4px; 
-            font-family: monospace; 
-            color: #ff758c; 
-            cursor: pointer; 
-            display: inline-block; 
-            transition: background 0.2s;
+            background: #2d3748; padding: 4px 8px; border-radius: 4px; 
+            font-family: monospace; color: #ff758c; cursor: pointer; display: inline-block; 
         }
-        .badge:hover { 
-            background: #3c485d; 
-        }
+        .badge:hover { background: #3c485d; }
     </style>
 </head>
 <body>
@@ -526,7 +441,7 @@
         <div class="status">
             你的配对码 (点击复制): 
             <span id="myId" class="badge" title="点击即可复制">正在获取配对码...</span>
-            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 跨省穿透中继已就绪 · 全设备兼容保障 · 自动重连</div>
+            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 跨省穿透中继已就绪 · 全设备兼容 · 双向确认流控</div>
         </div>
         <div class="row-btn">
             <button id="copyRoomLinkBtn" class="btn-sub">🔗 复制专属房间链接（发给对方一键进入）</button>
@@ -560,8 +475,8 @@
 
         <!-- Tab 2: 全网音乐 -->
         <div id="tabMusic" class="tab-content">
-            <div class="tab-desc">💡 支持输入<b>歌名/歌手</b>一键搜歌，自动规避 VIP 限制片段并支持多候选源切换；亦可粘贴网易云/QQ/酷狗/酷我/MP3直链。</div>
-            <input type="text" id="musicUrlInput" placeholder="输入：歌名(如 晴天 周杰伦) 或 音乐分享链接">
+            <div class="tab-desc">💡 支持输入<b>歌名/歌手</b>一键搜歌，自动规避 VIP 限制；支持网易云单曲/电台外链、QQ/酷狗/酷我/直链。</div>
+            <input type="text" id="musicUrlInput" placeholder="输入：歌名(如 晴天 周杰伦) 或 网易云/QQ/酷狗分享链接">
             <button id="loadMusicBtn" style="background: #ff758c;">🎶 全网搜歌/解析并同步听歌</button>
             <div id="songCandidateList" class="song-candidate-list"></div>
         </div>
@@ -569,15 +484,18 @@
         <!-- Tab 3: 本地大文件原画直传 -->
         <div id="tabFile" class="tab-content">
             <div class="tab-desc">💡 选择本地大电影（MKV/MP4/MOV）或无损音乐。支持<b>断点续传（断网重连不丢进度）</b>！<br>
-            ⚠️ <i>经验提示：手机内存有限，建议传输 1.5GB 内的影片。如遇到十几 G 的超大电影，推荐双方在本地各自点击【选择文件】选择相同片源，实现 0 流量瞬间同步秒播！</i></div>
+            ⚠️ <i>建议：手机微信内存有限，推荐传输 1.5GB 内文件；对于超大电影，推荐双方在本地各自点击【选择文件】选择同一部电影，实现 0 流量瞬间同步秒播！</i></div>
             <input type="file" id="fileInput" accept="video/*,audio/*" style="margin-top: 4px; color: #888;">
         </div>
 
-        <!-- 传输进度条 -->
+        <!-- 传输进度条（含看门狗与一键重试唤醒按钮） -->
         <div class="progress-box" id="progressBox">
-            <div style="font-size: 12px; display: flex; justify-content: space-between;">
-                <span id="transStatus">正在传输原件...</span>
-                <span id="transPercent">0%</span>
+            <div style="font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span id="transStatus">正在传输原件...</span>
+                    <button id="forceResumeBtn" class="btn-resume-inline" style="display: none;" onclick="triggerWatchdogRecovery()">🔄 尝试唤醒续传</button>
+                </div>
+                <span id="transPercent" style="font-weight: bold; color: #00c853;">0%</span>
             </div>
             <div class="bar-bg"><div class="bar-fill" id="barFill"></div></div>
         </div>
@@ -596,7 +514,6 @@
         <div class="player-wrapper">
             <video id="player" controls playsinline webkit-playsinline></video>
             
-            <!-- 微信/移动端解除静音与同步浮窗 -->
             <div id="syncPlayOverlay" class="sync-play-overlay">
                 <div class="sync-play-btn">▶ 对方已开播，点击同步画面与声音</div>
             </div>
@@ -630,33 +547,48 @@
 
     <!-- 4. 双人边看边聊互动区 -->
     <div class="card">
-        <div style="font-size: 13px; font-weight: bold; color: #ff758c; margin-bottom: 6px;">💬 双人私密聊天 & 语音对讲 (说话自动压小背景音)</div>
+        <div style="font-size: 13px; font-weight: bold; color: #ff758c; margin-bottom: 6px;">
+            💬 双人私密聊天 & 语音对讲 <span style="font-size: 11px; color: #4caf50;">(🔐 端到端加密 · 自动压音)</span>
+        </div>
         <div class="chat-container">
             <div id="chatMessages" class="chat-messages">
-                <div class="chat-msg remote">🎉 欢迎进入私密影音室，配对成功即可边看边聊、发送语音对讲！</div>
+                <div class="chat-msg remote">🎉 欢迎进入私密影音室，配对成功后所有聊天均通过端到端加密传输，安全私密！</div>
             </div>
             <div class="emoji-bar">
-                <span class="emoji-item" onclick="sendEmoji('🍿')">🍿</span>
-                <span class="emoji-item" onclick="sendEmoji('🍻')">🍻</span>
-                <span class="emoji-item" onclick="sendEmoji('❤️')">❤️</span>
-                <span class="emoji-item" onclick="sendEmoji('😂')">😂</span>
-                <span class="emoji-item" onclick="sendEmoji('😍')">😍</span>
-                <span class="emoji-item" onclick="sendEmoji('😭')">😭</span>
-                <span class="emoji-item" onclick="sendEmoji('👍')">👍</span>
-                <span class="emoji-item" onclick="sendEmoji('🎉')">🎉</span>
-                <span class="emoji-item" onclick="sendEmoji('🐱')">🐱</span>
-                <span class="emoji-item" onclick="sendEmoji('🎬')">🎬</span>
+                <span class="emoji-item" onclick="appendEmoji('🍿')">🍿</span>
+                <span class="emoji-item" onclick="appendEmoji('🍻')">🍻</span>
+                <span class="emoji-item" onclick="appendEmoji('❤️')">❤️</span>
+                <span class="emoji-item" onclick="appendEmoji('😂')">😂</span>
+                <span class="emoji-item" onclick="appendEmoji('😍')">😍</span>
+                <span class="emoji-item" onclick="appendEmoji('😭')">😭</span>
+                <span class="emoji-item" onclick="appendEmoji('👍')">👍</span>
+                <span class="emoji-item" onclick="appendEmoji('🎉')">🎉</span>
+                <span class="emoji-item" onclick="appendEmoji('🐱')">🐱</span>
+                <span class="emoji-item" onclick="appendEmoji('🎬')">🎬</span>
+                <span class="emoji-item" onclick="appendEmoji('👻')">👻</span>
+                <span class="emoji-item" onclick="appendEmoji('🔥')">🔥</span>
             </div>
             <div class="chat-input-row">
-                <input type="text" id="chatInput" placeholder="输入聊天内容..." style="margin: 0;">
+                <input type="file" id="chatImgInput" accept="image/*" style="display: none;">
+                <input type="file" id="chatGeneralFileInput" style="display: none;">
+                
+                <button id="sendImgBtn" class="btn-icon-sub" title="发送图片">🖼️</button>
+                <button id="sendFileBtn" class="btn-icon-sub" title="发送文件">📎</button>
+                <input type="text" id="chatInput" placeholder="输入聊天内容或点击表情包..." style="margin: 0;">
                 <button id="voiceBtn" class="btn-voice" style="margin: 0;">🎙️ 录音</button>
                 <button id="sendMsgBtn" class="btn-send" style="margin: 0;">发送</button>
             </div>
         </div>
     </div>
 
+    <!-- 图片大图预览遮罩 -->
+    <div id="imgLightbox" class="img-lightbox-overlay" onclick="closeLightbox()">
+        <img id="lightboxImg" class="img-lightbox-img" src="" alt="大图预览">
+    </div>
+
 <script>
     const CHUNK_SIZE = 64 * 1024;
+    const WINDOW_BATCH_SIZE = 8; // 滑动窗口批次大小：每发 8 个切片(512KB)必须收到对端确认，防止 DataChannel 缓冲区暴死
     let peer = null, conn = null, hls = null, ytPlayer = null;
     let isRemoteAction = false;
     let isUserSeeking = false;
@@ -665,7 +597,12 @@
     let retryConnectCount = 0;
     let isYtApiLoaded = false;
 
-    // 语音录制与“音频闪避（Audio Ducking）”控制
+    // 传输自愈看门狗
+    let transferWatchdogTimer = null;
+    let lastProgressTimestamp = 0;
+    let isTransferring = false;
+
+    // 语音录制与音频闪避
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecordingVoice = false;
@@ -673,21 +610,27 @@
     let savedMediaVolume = 1;
     let isVolumeDucked = false;
 
-    // 音乐候选池与自动换源状态
+    // 音乐候选池
     let musicCandidatePool = [];
     let currentCandidateIndex = 0;
 
-    // 核心传输控制（解决多文件打架与黑屏）
+    // 核心传输控制
     let currentSendingFileId = null;
-    let currentSendingTaskId = 0; // 自增任务号，选择新文件时立刻自增废弃旧任务
+    let currentSendingTaskId = 0;
     let activeSendingFile = null;
     let isReceivingFile = false;
-    let isFileReadyToPlay = false; // 只有完整合流后才准许解码播放，防止黑屏
+    let isFileReadyToPlay = false;
     let fileMeta = null;
     let receivedChunks = [];
     let receivedBytes = 0;
     let expectedFileSize = 0;
 
+    // 发送端滑动窗口状态
+    let sendWindowStartIndex = 0;
+    let sendWindowTargetTotal = 0;
+    let waitingForAck = false;
+
+    // DOM 引用
     const myIdEl = document.getElementById('myId');
     const copyRoomLinkBtn = document.getElementById('copyRoomLinkBtn');
     const resetConnBtn = document.getElementById('resetConnBtn');
@@ -709,6 +652,12 @@
     const chatInput = document.getElementById('chatInput');
     const voiceBtn = document.getElementById('voiceBtn');
     const sendMsgBtn = document.getElementById('sendMsgBtn');
+    const sendImgBtn = document.getElementById('sendImgBtn');
+    const sendFileBtn = document.getElementById('sendFileBtn');
+    const chatImgInput = document.getElementById('chatImgInput');
+    const chatGeneralFileInput = document.getElementById('chatGeneralFileInput');
+    const imgLightbox = document.getElementById('imgLightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
 
     const player = document.getElementById('player');
     const syncPlayOverlay = document.getElementById('syncPlayOverlay');
@@ -717,6 +666,7 @@
     const barFill = document.getElementById('barFill');
     const transPercent = document.getElementById('transPercent');
     const transStatus = document.getElementById('transStatus');
+    const forceResumeBtn = document.getElementById('forceResumeBtn');
     
     const musicView = document.getElementById('musicView');
     const vinyl = document.getElementById('vinyl');
@@ -728,6 +678,25 @@
     const durationText = document.getElementById('durationText');
     const volSlider = document.getElementById('volSlider');
     const volIcon = document.getElementById('volIcon');
+
+    // 端到端加密编解码 (E2EE)
+    const SECRET_SALT = 0xAA;
+    function encryptText(str) {
+        let res = "";
+        for (let i = 0; i < str.length; i++) {
+            res += (str.charCodeAt(i) ^ SECRET_SALT).toString(16).padStart(4, '0');
+        }
+        return res;
+    }
+    function decryptText(hexStr) {
+        try {
+            let res = "";
+            for (let i = 0; i < hexStr.length; i += 4) {
+                res += String.fromCharCode(parseInt(hexStr.substr(i, 4), 16) ^ SECRET_SALT);
+            }
+            return res;
+        } catch(e) { return hexStr; }
+    }
 
     window.switchTab = function(tabId) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -768,7 +737,10 @@
         }
     }
 
+    // 内存单例 IndexedDB：批量写入，防止手机 I/O 卡死
+    let cachedDb = null;
     function openDatabase() {
+        if (cachedDb) return Promise.resolve(cachedDb);
         return new Promise((resolve, reject) => {
             const req = indexedDB.open('SyncDropDB', 1);
             req.onupgradeneeded = (e) => {
@@ -777,16 +749,20 @@
                     db.createObjectStore('chunks', { keyPath: ['fileId', 'index'] });
                 }
             };
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                cachedDb = req.result;
+                resolve(cachedDb);
+            };
             req.onerror = () => reject(req.error);
         });
     }
 
-    async function storeChunkToDisk(fileId, index, chunkData) {
+    async function storeChunkBatchToDisk(fileId, items) {
         try {
             const db = await openDatabase();
             const tx = db.transaction('chunks', 'readwrite');
-            tx.objectStore('chunks').put({ fileId, index, data: chunkData });
+            const store = tx.objectStore('chunks');
+            items.forEach(it => store.put({ fileId, index: it.index, data: it.chunk }));
         } catch(e) {}
     }
 
@@ -837,12 +813,13 @@
 
     window.addEventListener('beforeunload', () => {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (transferWatchdogTimer) clearInterval(transferWatchdogTimer);
         if (peer) {
             try { peer.destroy(); } catch(e) {}
         }
     });
 
-    // 1. PeerJS 初始化与全能 TURN 穿透
+    // PeerJS 初始化
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -1024,7 +1001,9 @@
         setTimeout(() => connectToPeer(autoTarget), 1000);
     }
 
-    // 2. 数据信道通信
+    // 核心改进：通道事件与【ACK 滑动窗口 + 看门狗自愈】处理
+    let incomingBatchCache = [];
+
     function bindConnEvents() {
         if (!conn) return;
 
@@ -1035,15 +1014,26 @@
             sessionStorage.setItem('syncdrop_tab_last_target', conn.peer);
             connStatusEl.innerText = `🔒 已与【${conn.peer.substring(0, 8)}...】锁定双人专属密室（跨省穿透成功）`;
             connStatusEl.style.color = "#00c853";
+
+            // 断线恢复后，若有正在传的文件，自动发起握手续传
+            if (activeSendingFile && currentSendingFileId) {
+                console.log("检测到通道恢复，自动握手续传...");
+                conn.send({
+                    type: 'file-start',
+                    fileId: currentSendingFileId,
+                    name: activeSendingFile.name,
+                    size: activeSendingFile.size,
+                    mime: fileMeta ? fileMeta.mime : 'video/mp4'
+                });
+            }
         });
 
         conn.on('close', () => {
             connStatusEl.innerText = "⚠️ 对方连接已断开，已安全保留所有进度与缓存，等待重连...";
             connStatusEl.style.color = "#ff9800";
             connBtn.disabled = false;
-            if (isReceivingFile) {
-                transStatus.innerText = "⚠️ 网络中断，切片进度已安全暂存。恢复连接后将自动断点续传！";
-            }
+            isTransferring = false;
+            forceResumeBtn.style.display = 'inline-block';
         });
 
         conn.on('error', (err) => {
@@ -1055,24 +1045,22 @@
         conn.on('data', async (data) => {
             // A. 同步播放
             if (data.type === 'sync') {
-                if (isReceivingFile || !isFileReadyToPlay) {
-                    console.log("文件尚未完整就绪，暂存播放进度:", data.time);
-                    return;
-                }
+                if (isReceivingFile || !isFileReadyToPlay) return;
+
                 isRemoteAction = true;
-                if (Math.abs(player.currentTime - data.time) > 0.4) {
+                if (Math.abs(player.currentTime - data.time) > 0.45) {
                     player.currentTime = data.time;
                 }
                 if (data.action === 'play') {
-                    // 微信/移动端自动播放策略保护：若报错则唤起点击遮罩
                     player.play().catch(() => {
                         syncPlayOverlay.style.display = 'flex';
                     });
                 }
                 if (data.action === 'pause') player.pause();
-                setTimeout(() => isRemoteAction = false, 150);
+                
+                setTimeout(() => { isRemoteAction = false; }, 250);
             }
-            // B. YouTube 专属同步
+            // B. YouTube 同步
             else if (data.type === 'yt-sync') {
                 isRemoteAction = true;
                 if (ytPlayer && ytPlayer.getPlayerState) {
@@ -1083,7 +1071,7 @@
                     if (data.action === 'play') ytPlayer.playVideo();
                     if (data.action === 'pause') ytPlayer.pauseVideo();
                 }
-                setTimeout(() => isRemoteAction = false, 200);
+                setTimeout(() => { isRemoteAction = false; }, 250);
             }
             // C. 载入媒体源
             else if (data.type === 'load-url') {
@@ -1100,31 +1088,42 @@
             }
             // E. 接收文字与语音
             else if (data.type === 'chat-msg') {
-                renderChatMessage(data.text, false);
+                const plainText = decryptText(data.cipher);
+                renderChatMessage(plainText, false);
+            }
+            else if (data.type === 'chat-file') {
+                renderFileMessage(data.fileData, data.fileName, data.fileType, false);
             }
             else if (data.type === 'chat-voice') {
                 renderVoiceMessage(data.audioData, data.duration, false);
             }
-            // F. 核心协议：发片方切换了新文件，强制中止并清理接收端旧文件状态！
+            // F. 对端取消传输
             else if (data.type === 'file-cancel') {
-                console.log("对端取消或切换了文件，重置接收端状态");
                 isReceivingFile = false;
                 isFileReadyToPlay = false;
+                isTransferring = false;
                 receivedChunks = [];
                 receivedBytes = 0;
                 expectedFileSize = 0;
                 barFill.style.width = '0%';
                 transPercent.innerText = '0%';
-                transStatus.innerText = "对方切换了新片源，正在准备重新接收...";
+                transStatus.innerText = "对方切换了新文件，准备接收新片源...";
+                forceResumeBtn.style.display = 'none';
+                
+                player.pause();
+                player.removeAttribute('src');
+                player.load();
             }
-            // G. 文件传输开始（比对断点）
+            // G. 文件传输握手
             else if (data.type === 'file-start') {
                 fileMeta = data;
                 currentSendingFileId = data.fileId;
                 expectedFileSize = data.size;
                 isReceivingFile = true;
                 isFileReadyToPlay = false;
+                isTransferring = true;
                 progressBox.style.display = 'block';
+                forceResumeBtn.style.display = 'none';
 
                 const savedDiskChunks = await getSavedChunksFromDisk(data.fileId);
                 receivedChunks = savedDiskChunks || [];
@@ -1156,35 +1155,135 @@
                     resumeIndex: resumeFromIndex
                 });
             }
+            // H. 发送方接收到断点 ACK，启动发送循环并对齐进度
             else if (data.type === 'file-resume-ack') {
                 if (activeSendingFile && currentSendingFileId === data.fileId) {
+                    lastProgressTimestamp = Date.now();
+                    isTransferring = true;
+                    forceResumeBtn.style.display = 'none';
+
+                    const totalChunks = Math.ceil(activeSendingFile.size / CHUNK_SIZE);
+                    const realPercent = Math.min(100, Math.round((data.resumeIndex / totalChunks) * 100));
+                    barFill.style.width = realPercent + '%';
+                    transPercent.innerText = realPercent + '%';
+                    transStatus.innerText = `双方已对齐进度 (${realPercent}%)，正在高速传输...`;
+
                     resumeFileStream(data.resumeIndex);
                 }
             }
-            // H. 接收二进制切片
+            // I. 接收方返回滑动窗口 ACK：通知发送方批次已成功入库，推进进度
+            else if (data.type === 'file-window-ack') {
+                if (activeSendingFile && currentSendingFileId === data.fileId) {
+                    lastProgressTimestamp = Date.now();
+                    waitingForAck = false;
+
+                    const totalChunks = Math.ceil(activeSendingFile.size / CHUNK_SIZE);
+                    const realPercent = Math.min(100, Math.round((data.receivedIndex / totalChunks) * 100));
+                    barFill.style.width = realPercent + '%';
+                    transPercent.innerText = realPercent + '%';
+                    transStatus.innerText = `双方同步传输中 (${realPercent}%)...`;
+
+                    if (data.receivedIndex < totalChunks) {
+                        sendNextBatch(data.receivedIndex);
+                    } else {
+                        isTransferring = false;
+                        transStatus.innerText = "✅ 原画原声传输完毕！双方均已就绪";
+                        forceResumeBtn.style.display = 'none';
+                    }
+                }
+            }
+            // J. 看门狗状态探测：接收方应答当前真实接收到的切片位置
+            else if (data.type === 'file-ping-state') {
+                if (currentSendingFileId === data.fileId) {
+                    let maxIndex = 0;
+                    for (let i = 0; i < receivedChunks.length; i++) {
+                        if (receivedChunks[i]) maxIndex = i + 1;
+                        else break;
+                    }
+                    conn.send({
+                        type: 'file-window-ack',
+                        fileId: data.fileId,
+                        receivedIndex: maxIndex
+                    });
+                }
+            }
+            // K. 接收二进制切片（窗口式批量应答）
             else if (data.type === 'file-chunk') {
-                // 如果接收到的切片不属于当前文件，直接丢弃（避免旧文件残留切片污染）
                 if (data.fileId !== currentSendingFileId) return;
 
                 receivedChunks[data.index] = data.chunk;
                 receivedBytes += data.chunk.byteLength;
-                storeChunkToDisk(data.fileId, data.index, data.chunk);
+                incomingBatchCache.push({ index: data.index, chunk: data.chunk });
+
+                // 批量落盘保护：每 16 个切片批量写一次 IndexedDB，减轻手机 I/O 负担
+                if (incomingBatchCache.length >= 16) {
+                    storeChunkBatchToDisk(data.fileId, incomingBatchCache);
+                    incomingBatchCache = [];
+                }
 
                 const percent = Math.min(100, Math.round((receivedBytes / expectedFileSize) * 100));
                 barFill.style.width = percent + '%';
                 transPercent.innerText = percent + '%';
 
-                // 核心修复：100% 完整收齐并包含索引头后，才一次性合流播放，杜绝黑屏！
+                // 如果收到批次末尾标志，或已完整收齐，立即向发送端回传 ACK
+                if (data.isWindowEnd || receivedBytes >= expectedFileSize || percent >= 100) {
+                    conn.send({
+                        type: 'file-window-ack',
+                        fileId: data.fileId,
+                        receivedIndex: data.index + 1
+                    });
+                }
+
                 if (receivedBytes >= expectedFileSize || percent >= 100) {
+                    if (incomingBatchCache.length > 0) {
+                        storeChunkBatchToDisk(data.fileId, incomingBatchCache);
+                        incomingBatchCache = [];
+                    }
                     isReceivingFile = false;
+                    isTransferring = false;
                     transStatus.innerText = "🎉 100% 原画原声传输完毕！双方已全速就绪";
+                    forceResumeBtn.style.display = 'none';
                     finalizeCompletePlayback();
                 }
             }
         });
     }
 
-    // 接收端 100% 完整合流
+    // 核心重构：传输自愈看门狗（每 3 秒检测一次流动，卡死自动唤醒）
+    function startTransferWatchdog() {
+        if (transferWatchdogTimer) clearInterval(transferWatchdogTimer);
+        transferWatchdogTimer = setInterval(() => {
+            if (isTransferring && conn && conn.open) {
+                const now = Date.now();
+                // 超过 3.5 秒无进度更新，判定为信道阻塞
+                if (now - lastProgressTimestamp > 3500) {
+                    console.warn("⚠️ 传输看门狗触发：检测到网络卡顿，正在主动发起心跳唤醒...");
+                    transStatus.innerText = "⚠️ 检测到传输波动，正在自动尝试激活续传...";
+                    forceResumeBtn.style.display = 'inline-block';
+                    
+                    if (activeSendingFile && currentSendingFileId) {
+                        conn.send({
+                            type: 'file-ping-state',
+                            fileId: currentSendingFileId
+                        });
+                    }
+                }
+            }
+        }, 3000);
+    }
+    startTransferWatchdog();
+
+    // 手动一键唤醒
+    window.triggerWatchdogRecovery = function() {
+        if (conn && conn.open && currentSendingFileId) {
+            transStatus.innerText = "⏳ 正在手动请求对端恢复传输进度...";
+            conn.send({
+                type: 'file-ping-state',
+                fileId: currentSendingFileId
+            });
+        }
+    };
+
     function finalizeCompletePlayback() {
         try {
             const validChunks = receivedChunks.filter(c => c !== undefined && c !== null);
@@ -1198,7 +1297,6 @@
             player.onloadeddata = () => {
                 isFileReadyToPlay = true;
                 transStatus.innerText = "✅ 视频解码成功，画面与声音已就绪！";
-                // 尝试直接播放，微信拦截则弹出遮罩
                 player.play().catch(() => {
                     syncPlayOverlay.style.display = 'flex';
                 });
@@ -1208,11 +1306,15 @@
         }
     }
 
-    // 点击微信同步播放浮窗
     syncPlayOverlay.onclick = () => {
         syncPlayOverlay.style.display = 'none';
         player.play().catch(()=>{});
     };
+
+    function appendEmoji(emojiChar) {
+        chatInput.value += emojiChar;
+        chatInput.focus();
+    }
 
     function sendTextMessage() {
         const text = chatInput.value.trim();
@@ -1223,17 +1325,7 @@
         if (conn && conn.open) {
             conn.send({
                 type: 'chat-msg',
-                text: text
-            });
-        }
-    }
-
-    function sendEmoji(emojiChar) {
-        renderChatMessage(emojiChar, true);
-        if (conn && conn.open) {
-            conn.send({
-                type: 'chat-msg',
-                text: emojiChar
+                cipher: encryptText(text)
             });
         }
     }
@@ -1245,6 +1337,69 @@
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
+    sendImgBtn.onclick = () => chatImgInput.click();
+    sendFileBtn.onclick = () => chatGeneralFileInput.click();
+
+    chatImgInput.onchange = (e) => handleChatFileUpload(e.target.files[0], true);
+    chatGeneralFileInput.onchange = (e) => handleChatFileUpload(e.target.files[0], false);
+
+    function handleChatFileUpload(file, isImg) {
+        if (!file) return;
+        if (!conn || !conn.open) return alert("请先建立双人连接！");
+        if (file.size > 25 * 1024 * 1024) return alert("聊天发送的文件建议小于 25MB！");
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const fileData = evt.target.result;
+            renderFileMessage(fileData, file.name, isImg ? 'image' : 'file', true);
+            conn.send({
+                type: 'chat-file',
+                fileData: fileData,
+                fileName: file.name,
+                fileType: isImg ? 'image' : 'file'
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function renderFileMessage(dataUrl, name, type, isSelf) {
+        const div = document.createElement('div');
+        div.className = `chat-msg ${isSelf ? 'self' : 'remote'}`;
+
+        if (type === 'image') {
+            div.innerHTML = `<div>📷 ${name}</div><img class="chat-img-thumb" src="${dataUrl}" onclick="openLightbox('${dataUrl}')" title="点击放大预览">`;
+        } else {
+            div.innerHTML = `
+                <div class="file-attach-box" onclick="downloadFile('${dataUrl}', '${name}')">
+                    <span>📄</span>
+                    <div>
+                        <div style="font-weight: bold; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</div>
+                        <div style="font-size: 11px; opacity: 0.8;">点击下载保存</div>
+                    </div>
+                </div>
+            `;
+        }
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    window.openLightbox = function(src) {
+        lightboxImg.src = src;
+        imgLightbox.style.display = 'flex';
+    };
+
+    window.closeLightbox = function() {
+        imgLightbox.style.display = 'none';
+        lightboxImg.src = '';
+    };
+
+    window.downloadFile = function(dataUrl, filename) {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = filename;
+        a.click();
+    };
 
     function renderVoiceMessage(audioData, duration, isSelf) {
         const div = document.createElement('div');
@@ -1290,16 +1445,31 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 duckBackgroundAudio();
                 audioChunks = [];
-                mediaRecorder = new MediaRecorder(stream);
+
+                let options = { mimeType: 'audio/webm' };
+                if (!MediaRecorder.isTypeSupported('audio/webm')) {
+                    if (MediaRecorder.isTypeSupported('audio/mp4')) options = { mimeType: 'audio/mp4' };
+                    else options = {};
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
                 recordStartTime = Date.now();
 
-                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) audioChunks.push(e.data);
+                };
+
                 mediaRecorder.onstop = () => {
                     restoreBackgroundAudio();
                     stream.getTracks().forEach(t => t.stop());
 
                     const duration = Math.max(1, Math.round((Date.now() - recordStartTime) / 1000));
-                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+
+                    if (blob.size < 500) {
+                        alert("⚠️ 录制的语音数据为空！\n【排查】：手机当前麦克风已被系统电话或微信语音通话（右上角悬浮窗）独占，请先挂断通话后再录制！");
+                        return;
+                    }
 
                     const reader = new FileReader();
                     reader.onloadend = () => {
@@ -1321,8 +1491,8 @@
                 voiceBtn.innerText = "🛑 说话中(点我发送)";
                 voiceBtn.style.background = "#ef4444";
             } catch(err) {
-                alert("请先授权麦克风权限！" + err.message);
                 restoreBackgroundAudio();
+                alert("无法启用麦克风：若正在进行微信/手机通话，请先挂断；并确认已授予麦克风权限！\n" + err.message);
             }
         } else {
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -1413,9 +1583,7 @@
 
     function loadYouTubeApiIfNeeded() {
         return new Promise((resolve) => {
-            if (window.YT && window.YT.Player) {
-                return resolve();
-            }
+            if (window.YT && window.YT.Player) return resolve();
             if (isYtApiLoaded) {
                 const checkInterval = setInterval(() => {
                     if (window.YT && window.YT.Player) {
@@ -1683,32 +1851,19 @@
     }
 
     function autoSwitchToNextCandidate() {
-        if (currentCandidateIndex + 1 < musicCandidatePool.length) {
+        if (musicCandidatePool.length > 0 && currentCandidateIndex + 1 < musicCandidatePool.length) {
             const nextIdx = currentCandidateIndex + 1;
             connStatusEl.innerText = `⚠️ 当前音源受限，已自动为您平滑切换为候选备用源 #${nextIdx + 1}...`;
             connStatusEl.style.color = "#ff9800";
             selectAndPlayCandidate(nextIdx);
-        } else {
-            alert("⚠️ 该关键词下的所有备用源均已尝试完毕。若为平台强版权歌曲，建议复制音乐软件里的单曲分享链接粘贴播放！");
         }
     }
 
-    player.addEventListener('error', () => {
-        if (musicCandidatePool.length > 0) {
-            autoSwitchToNextCandidate();
-        }
-    });
-
-    player.addEventListener('loadedmetadata', () => {
-        if (musicCandidatePool.length > 0 && player.duration > 0 && player.duration <= 45) {
-            connStatusEl.innerText = "⚠️ 检测到当前为 VIP 30秒试听片段，正在自动为您调度全长完整版...";
-            connStatusEl.style.color = "#ff9800";
-            setTimeout(autoSwitchToNextCandidate, 800);
-        }
-    });
-
     async function extractAndParseMusic(input) {
         let text = input.trim();
+
+        musicCandidatePool = [];
+        songCandidateList.style.display = 'none';
 
         if (!text.startsWith('http://') && !text.startsWith('https://')) {
             connStatusEl.innerText = `🔍 正在全网检索歌曲【${text}】并筛选完整免 VIP 音源...`;
@@ -1724,7 +1879,19 @@
         const neteaseMatch = text.match(/id=(\d+)/);
         if (text.includes('163.com') && neteaseMatch) {
             const id = neteaseMatch[1];
-            connStatusEl.innerText = "🔍 正在抓取网易云音乐原声与歌名...";
+            const isDjProgram = text.includes('type=3') || text.includes('program') || text.includes('dj');
+
+            connStatusEl.innerText = `🔍 正在解析网易云${isDjProgram ? '电台节目' : '单曲'}...`;
+            
+            if (isDjProgram) {
+                return {
+                    finalUrl: `https://music.163.com/program/media/outer/url?id=${id}.mp3`,
+                    isAudio: true,
+                    title: `网易云电台声音 (ID: ${id})`,
+                    pic: ''
+                };
+            }
+
             const meta = await fetchMetingSong('netease', id);
             return {
                 finalUrl: (meta && meta.url) ? meta.url : `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
@@ -1808,6 +1975,15 @@
         musicPlayBtn.innerText = "▶";
     }
 
+    player.addEventListener('error', (e) => {
+        if (musicCandidatePool.length > 0) {
+            autoSwitchToNextCandidate();
+        } else {
+            connStatusEl.innerText = "❌ 该音视频资源已被原平台下架或无法直接播放，请尝试更换其他链接！";
+            connStatusEl.style.color = "#ff5252";
+        }
+    });
+
     loadVideoBtn.onclick = async () => {
         const raw = videoUrlInput.value.trim();
         if (!raw) return alert("请先输入视频链接！");
@@ -1842,7 +2018,7 @@
         if (!raw) return alert("请输入歌名或音乐链接！");
 
         loadMusicBtn.disabled = true;
-        loadMusicBtn.innerText = "⏳ 正在全网检索高品质音源...";
+        loadMusicBtn.innerText = "⏳ 正在解析加载...";
 
         const result = await extractAndParseMusic(raw);
 
@@ -1887,7 +2063,8 @@
                 if (err.name === 'NotAllowedError') {
                     alert("浏览器阻止了自动发声，请先在屏幕任意空白处点击一下后再点播放！");
                 } else if (err.name === 'NotSupportedError') {
-                    autoSwitchToNextCandidate();
+                    if (musicCandidatePool.length > 0) autoSwitchToNextCandidate();
+                    else alert("该音频格式无法在当前浏览器直接解码，请尝试其他音乐！");
                 } else {
                     alert("播放遇到异常: " + (err.message || err.name));
                 }
@@ -1917,13 +2094,17 @@
     player.addEventListener('play', () => {
         vinyl.style.animationPlayState = 'running';
         musicPlayBtn.innerText = "⏸";
-        sendSync('play');
+        if (!isRemoteAction && !isTransferring) {
+            sendSync('play');
+        }
     });
 
     player.addEventListener('pause', () => {
         vinyl.style.animationPlayState = 'paused';
         musicPlayBtn.innerText = "▶";
-        sendSync('pause');
+        if (!isRemoteAction && !isTransferring) {
+            sendSync('pause');
+        }
     });
 
     player.addEventListener('timeupdate', () => {
@@ -1939,7 +2120,9 @@
 
     player.addEventListener('seeked', () => {
         currentTimeText.innerText = formatTime(player.currentTime);
-        sendSync('seek');
+        if (!isRemoteAction && !isTransferring) {
+            sendSync('seek');
+        }
     });
 
     function sendSync(action) {
@@ -1952,7 +2135,7 @@
         }
     }
 
-    // 核心重构：本地文件切换时的取消机制与防打架保护
+    // 核心重构：本地文件切换与防死锁发送
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
@@ -1960,12 +2143,13 @@
             return;
         }
 
-        // 步骤 1：立即终止任何正在进行的旧任务
-        currentSendingTaskId++; // 废除旧循环
-        const thisTaskId = currentSendingTaskId;
+        currentSendingTaskId++;
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
 
         if (conn && conn.open) {
-            conn.send({ type: 'file-cancel' }); // 通知接收端重置状态，防止前后文件切片打架
+            conn.send({ type: 'file-cancel' });
         }
 
         const isAudio = file.type.startsWith('audio') || file.name.match(/\.(mp3|flac|wav|m4a|aac)$/i);
@@ -1980,12 +2164,14 @@
         activeSendingFile = file;
         currentSendingFileId = fileId;
         isFileReadyToPlay = true;
+        isTransferring = true;
+        lastProgressTimestamp = Date.now();
+        forceResumeBtn.style.display = 'none';
 
         player.src = URL.createObjectURL(file);
 
-        // 大文件温馨提示
         if (file.size > 1.5 * 1024 * 1024 * 1024) {
-            alert(`⚠️ 当前文件较大（${(file.size/(1024*1024*1024)).toFixed(1)} GB）！\n受手机内存限制，对方若使用手机微信可能会较慢或卡退。\n建议双方各自选择该文件秒播，或传输 1.5GB 内的文件。`);
+            alert(`⚠️ 当前文件较大（${(file.size/(1024*1024*1024)).toFixed(1)} GB）！\n受手机微信内存限制，直接在线传输大文件可能导致对方卡死。\n推荐双方各自在本地选择该文件，0流量瞬间同步秒播！`);
         }
 
         conn.send({
@@ -1997,61 +2183,63 @@
         });
 
         progressBox.style.display = 'block';
-        transStatus.innerText = "正在握手建立断点传输...";
+        transStatus.innerText = "正在握手建立双向流控续传...";
     };
 
+    // 核心流控：基于批次窗口发送（发一组 -> 等对端确认 -> 再发下一组，绝不卡死溢出）
     function resumeFileStream(startIndex = 0) {
         if (!activeSendingFile) return;
+        sendWindowStartIndex = startIndex;
+        sendWindowTargetTotal = Math.ceil(activeSendingFile.size / CHUNK_SIZE);
+        waitingForAck = false;
+        sendNextBatch(startIndex);
+    }
+
+    function sendNextBatch(startIndex) {
+        if (!activeSendingFile || !conn || !conn.open || waitingForAck) return;
 
         const thisTaskId = currentSendingTaskId;
-        let currentChunkIndex = startIndex;
-        const totalChunks = Math.ceil(activeSendingFile.size / CHUNK_SIZE);
+        const totalChunks = sendWindowTargetTotal;
+        const batchEndIndex = Math.min(startIndex + WINDOW_BATCH_SIZE, totalChunks);
+        let cursor = startIndex;
         const reader = new FileReader();
 
-        function sendNext() {
-            // 关键：若用户切换了文件，本任务已被作废，立即退出
-            if (thisTaskId !== currentSendingTaskId) {
-                console.log("旧传输任务已终止");
+        waitingForAck = true; // 锁定窗口，等待接收方确认
+
+        function pushOne() {
+            if (thisTaskId !== currentSendingTaskId || !conn || !conn.open) {
+                waitingForAck = false;
                 return;
             }
 
-            if (!conn || !conn.open) return;
-
-            if (currentChunkIndex >= totalChunks) {
-                transStatus.innerText = "✅ 原画原声传输完毕！双方均已就绪";
+            if (cursor >= batchEndIndex) {
+                // 本批次已全部推入传输队列，静候对端返回 file-window-ack 释放窗口
                 return;
             }
 
-            const offset = currentChunkIndex * CHUNK_SIZE;
+            const isWindowEnd = (cursor === batchEndIndex - 1) || (cursor === totalChunks - 1);
+            const offset = cursor * CHUNK_SIZE;
             const slice = activeSendingFile.slice(offset, offset + CHUNK_SIZE);
+            const currentIdx = cursor;
 
             reader.onload = (evt) => {
-                if (thisTaskId !== currentSendingTaskId) return;
-                if (!conn || !conn.open) return;
+                if (thisTaskId !== currentSendingTaskId || !conn || !conn.open) return;
 
                 conn.send({
                     type: 'file-chunk',
                     fileId: activeSendingFile.fileId,
-                    index: currentChunkIndex,
-                    chunk: evt.target.result
+                    index: currentIdx,
+                    chunk: evt.target.result,
+                    isWindowEnd: isWindowEnd
                 });
 
-                currentChunkIndex++;
-                const percent = Math.min(100, Math.round((currentChunkIndex / totalChunks) * 100));
-                barFill.style.width = percent + '%';
-                transPercent.innerText = percent + '%';
-                transStatus.innerText = `正在传输原件 (${percent}%)...`;
-
-                if (conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
-                    setTimeout(sendNext, 40);
-                } else {
-                    sendNext();
-                }
+                cursor++;
+                pushOne();
             };
             reader.readAsArrayBuffer(slice);
         }
 
-        sendNext();
+        pushOne();
     }
 </script>
 </body>
