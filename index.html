@@ -8,12 +8,9 @@
     <title>SyncDrop - 异地原画影音私密同步</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧🐱</text></svg>">
     
-    <!-- 引入 PeerJS (WebRTC P2P 直连) -->
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <!-- 引入 Hls.js (支持播放在线 m3u8 切片流媒体) -->
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <!-- 引入 YouTube 官方 IFrame API -->
-    <script src="https://www.youtube.com/iframe_api"></script>
+    <!-- 引入 PeerJS (WebRTC P2P 直连) 与 Hls.js，换用高可用镜像 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +29,7 @@
             margin-bottom: 12px; 
             border: 1px solid #2d3139; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            overflow: hidden; /* 防止子元素撑破卡片外框 */
+            overflow: hidden;
         }
         h2 { 
             font-size: 1.25rem; 
@@ -98,7 +95,7 @@
             border-radius: 6px;
         }
 
-        /* 选项卡导航栏（全新响应式自适应设计） */
+        /* 选项卡导航栏（自适应防溢出） */
         .tabs-nav {
             display: flex;
             background: #12141a;
@@ -110,7 +107,7 @@
         }
         .tab-btn {
             flex: 1 1 0;
-            min-width: 0; /* 关键：允许 flex 项目收缩而不溢出 */
+            min-width: 0;
             padding: 9px 4px;
             background: transparent;
             color: #888;
@@ -143,7 +140,6 @@
             color: #fff;
         }
 
-        /* 响应式断点控制：窗口缩窄时自动隐藏冗长副标题，防止文字溢出 */
         @media (max-width: 680px) {
             .tab-sub-text {
                 display: none;
@@ -176,7 +172,6 @@
             line-height: 1.4;
         }
 
-        /* 歌曲搜索多候选列表 */
         .song-candidate-list {
             display: none;
             max-height: 180px;
@@ -495,8 +490,8 @@
     <div class="card">
         <div class="status">
             你的配对码 (点击复制): 
-            <span id="myId" class="badge" title="点击即可复制">正在注册专属信道...</span>
-            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 专属双人密室 · 磁盘持久化缓存 · 断网自动续传</div>
+            <span id="myId" class="badge" title="点击即可复制">正在获取配对码...</span>
+            <div style="font-size: 11px; color: #4caf50; margin-top: 4px;">🔒 跨省穿透中继已就绪 · 对称 NAT 穿透保护 · 自动断网续传</div>
         </div>
         <div class="row-btn">
             <button id="copyRoomLinkBtn" class="btn-sub">🔗 复制专属房间链接（发给对方一键进入）</button>
@@ -507,7 +502,7 @@
         <div id="connStatus" class="status" style="color: #ff9800; font-weight: bold;">状态: 正在初始化...</div>
     </div>
 
-    <!-- 2. 音视频源加载面板（自适应防溢出选项卡） -->
+    <!-- 2. 音视频源加载面板 -->
     <div class="card">
         <div class="tabs-nav">
             <button class="tab-btn tab-video active" onclick="switchTab('tabVideo')">
@@ -592,14 +587,13 @@
         </div>
     </div>
 
-    <!-- 4. 双人边看边聊互动区（文字 + 表情包 + 自动闪避语音对讲） -->
+    <!-- 4. 双人边看边聊互动区 -->
     <div class="card">
         <div style="font-size: 13px; font-weight: bold; color: #ff758c; margin-bottom: 6px;">💬 双人私密聊天 & 语音对讲 (说话自动压小背景音)</div>
         <div class="chat-container">
             <div id="chatMessages" class="chat-messages">
                 <div class="chat-msg remote">🎉 欢迎进入私密影音室，配对成功即可边看边聊、发送语音对讲！</div>
             </div>
-            <!-- 表情包快捷栏 -->
             <div class="emoji-bar">
                 <span class="emoji-item" onclick="sendEmoji('🍿')">🍿</span>
                 <span class="emoji-item" onclick="sendEmoji('🍻')">🍻</span>
@@ -612,7 +606,6 @@
                 <span class="emoji-item" onclick="sendEmoji('🐱')">🐱</span>
                 <span class="emoji-item" onclick="sendEmoji('🎬')">🎬</span>
             </div>
-            <!-- 输入与语音操作区 -->
             <div class="chat-input-row">
                 <input type="text" id="chatInput" placeholder="输入聊天内容..." style="margin: 0;">
                 <button id="voiceBtn" class="btn-voice" style="margin: 0;">🎙️ 录音</button>
@@ -629,6 +622,7 @@
     let connectTimeoutTimer = null;
     let heartbeatInterval = null;
     let retryConnectCount = 0;
+    let isYtApiLoaded = false;
 
     // 语音录制与“音频闪避（Audio Ducking）”控制
     let mediaRecorder = null;
@@ -670,7 +664,6 @@
     const subInput = document.getElementById('subInput');
     const loadSubBtn = document.getElementById('loadSubBtn');
 
-    // 聊天 DOM 元素
     const chatMessages = document.getElementById('chatMessages');
     const chatInput = document.getElementById('chatInput');
     const voiceBtn = document.getElementById('voiceBtn');
@@ -705,7 +698,6 @@
         document.getElementById(tabId).classList.add('active');
     };
 
-    // 音频闪避引擎 (Audio Ducking)
     function duckBackgroundAudio() {
         if (isVolumeDucked) return;
         isVolumeDucked = true;
@@ -734,7 +726,6 @@
         }
     }
 
-    // IndexedDB 磁盘持久化缓存
     function openDatabase() {
         return new Promise((resolve, reject) => {
             const req = indexedDB.open('SyncDropDB', 1);
@@ -809,7 +800,7 @@
         }
     });
 
-    // PeerJS 初始化
+    // 1. 核心修复：引入带凭据的 OpenRelay 全球免费 TURN 服务器，攻破跨省对称型 NAT
     function initPeerEngine() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (peer) {
@@ -817,16 +808,35 @@
         }
 
         peer = new Peer(mySessionId, {
-            host: '0.peerjs.com',
-            secure: true,
-            port: 443,
-            pingInterval: 5000,
             config: {
                 iceServers: [
+                    // 国内低延迟 STUN
                     { urls: 'stun:stun.miwifi.com:3478' },
                     { urls: 'stun:stun.chat.bilibili.com:3478' },
                     { urls: 'stun:stun.cloudflare.com:3478' },
-                    { urls: 'stun:stun.l.google.com:19302' }
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    // 全球高可用免费 TURN 中继服务器池 (解决手机数据/跨省大内网打洞失败)
+                    { urls: 'stun:openrelay.metered.ca:80' },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:80', 
+                        username: 'openrelayproject', 
+                        credential: 'openrelayproject' 
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:443', 
+                        username: 'openrelayproject', 
+                        credential: 'openrelayproject' 
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:443?transport=tcp', 
+                        username: 'openrelayproject', 
+                        credential: 'openrelayproject' 
+                    },
+                    { 
+                        urls: 'turns:openrelay.metered.ca:443?transport=tcp', 
+                        username: 'openrelayproject', 
+                        credential: 'openrelayproject' 
+                    }
                 ]
             }
         });
@@ -866,7 +876,7 @@
                 const target = targetIdEl.value.trim();
                 if (retryConnectCount < 2 && target) {
                     retryConnectCount++;
-                    connStatusEl.innerText = `⏳ 正在穿透信令节点探测对方(${retryConnectCount}/2)...`;
+                    connStatusEl.innerText = `⏳ 正在穿透跨省中继节点探测对方(${retryConnectCount}/2)...`;
                     connStatusEl.style.color = "#ff9800";
                     setTimeout(() => connectToPeer(target, true), 1500);
                     return;
@@ -984,7 +994,7 @@
             retryConnectCount = 0;
             connBtn.disabled = false;
             sessionStorage.setItem('syncdrop_tab_last_target', conn.peer);
-            connStatusEl.innerText = `🔒 已与【${conn.peer.substring(0, 8)}...】锁定双人专属密室（防偷听已生效）`;
+            connStatusEl.innerText = `🔒 已与【${conn.peer.substring(0, 8)}...】锁定双人专属密室（跨省穿透成功）`;
             connStatusEl.style.color = "#00c853";
 
             if (activeSendingFile && currentTransferFileId) {
@@ -1118,7 +1128,6 @@
         });
     }
 
-    // 聊天核心逻辑
     function sendTextMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
@@ -1356,13 +1365,37 @@
         reader.readAsText(file);
     };
 
+    // 核心优化：按需异步加载 YouTube IFrame API，绝不阻塞国内正常网页加载
+    function loadYouTubeApiIfNeeded() {
+        return new Promise((resolve) => {
+            if (window.YT && window.YT.Player) {
+                return resolve();
+            }
+            if (isYtApiLoaded) {
+                const checkInterval = setInterval(() => {
+                    if (window.YT && window.YT.Player) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 200);
+                return;
+            }
+            isYtApiLoaded = true;
+            const tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            window.onYouTubeIframeAPIReady = () => resolve();
+            document.body.appendChild(tag);
+        });
+    }
+
     function extractYouTubeId(url) {
         const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
         return match ? match[1] : null;
     }
 
-    function loadYouTubeVideo(videoId, broadcast = true) {
+    async function loadYouTubeVideo(videoId, broadcast = true) {
         setUIMode('youtube');
+        await loadYouTubeApiIfNeeded();
 
         if (ytPlayer && ytPlayer.loadVideoById) {
             ytPlayer.loadVideoById(videoId);
@@ -1874,7 +1907,6 @@
         }
     }
 
-    // 本地大文件传输（断点续传握手）
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file || !conn || !conn.open) {
