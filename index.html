@@ -573,6 +573,10 @@
                 <div id="ytPlayer"></div>
             </div>
 
+            <!-- 官方外链保底发声通道（默认隐藏，供网易云电台 / 播客外链播放使用） -->
+            <iframe id="hiddenOutchainFrame" title="外链保底播放器"
+                    allow="autoplay; encrypted-media" referrerpolicy="no-referrer"></iframe>
+
             <!-- 核心：复古旋转黑胶唱片视窗 -->
             <div id="musicView" class="music-view">
                 <div class="vinyl" id="vinyl"><div class="vinyl-center" id="vinylCenter"></div></div>
@@ -629,7 +633,7 @@
                 <button id="sendImgBtn" class="btn-icon-sub" title="发送图片">🖼️</button>
                 <button id="sendFileBtn" class="btn-icon-sub" title="发送文件">📎</button>
                 <textarea id="chatInput" class="chat-textarea" placeholder="输入内容或连点表情包... (Enter 发送，Shift+Enter 换行)"></textarea>
-                <button id="voiceBtn" class="btn-voice">🎙️ 录音</button>
+                <button id="voiceBtn" class="btn-voice">🎙️</button>
                 <button id="sendMsgBtn" class="btn-send">发送</button>
             </div>
         </div>
@@ -649,6 +653,7 @@
     let connectTimeoutTimer = null;
     let heartbeatInterval = null;
     let retryConnectCount = 0;
+    let pendingPeerTarget = null;
     let isYtApiLoaded = false;
 
     // 传输看门狗
@@ -737,6 +742,20 @@
     const durationText = document.getElementById('durationText');
     const volSlider = document.getElementById('volSlider');
     const volIcon = document.getElementById('volIcon');
+    const hiddenOutchainFrame = document.getElementById('hiddenOutchainFrame');
+
+    // 外链保底发声引擎状态（网易云电台 / 播客）
+    let isOutchainAudioMode = false;
+    let outchainVirtualDuration = 1800;
+    let outchainCurrentSec = 0;
+    let outchainTickerTimer = null;
+    let outchainActiveUrl = "";
+
+    // 可选：把「网易云电台节目」解析成原生音频的服务地址
+    // 部署方式见同目录 netease-program-worker.js；留空则继续走官方外链播放器
+    const NETEASE_RESOLVER = "";
+
+
 
     // 端到端加密 (E2EE)
     const SECRET_SALT = 0xAA;
@@ -893,6 +912,15 @@
             connStatusEl.style.color = "#aaa";
             startHeartbeat();
 
+            // 有排队目标（如 ?connect= 链接）优先连接
+            if (pendingPeerTarget) {
+                const queued = pendingPeerTarget;
+                pendingPeerTarget = null;
+                targetIdEl.value = queued;
+                setTimeout(() => connectToPeer(queued), 300);
+                return;
+            }
+
             const lastTarget = sessionStorage.getItem('syncdrop_tab_last_target');
             if (lastTarget && lastTarget !== id) {
                 targetIdEl.value = lastTarget;
@@ -904,8 +932,30 @@
         peer.on('disconnected', () => { peer.reconnect(); });
 
         peer.on('error', err => {
-            console.error("PeerJS 异常:", err);
             clearTimeout(connectTimeoutTimer);
+
+            // 对方不在线属于正常状态，不要在控制台报红
+            if (err.type === 'peer-unavailable') {
+                console.warn("频道目标暂不可达（对方未在线）:", err.message || err.type);
+                conn = null;
+                const target = (targetIdEl.value || "").trim();
+                if (retryConnectCount < 2 && target) {
+                    retryConnectCount++;
+                    connStatusEl.innerText = `⏳ 正在穿透中继节点探测对方(${retryConnectCount}/2)...`;
+                    connStatusEl.style.color = "#ff9800";
+                    setTimeout(() => connectToPeer(target, true), 1500);
+                    return;
+                }
+                retryConnectCount = 0;
+                // 目标已失效：清掉自动重连记忆，避免每次刷新都去连一个不存在的节点
+                sessionStorage.removeItem('syncdrop_tab_last_target');
+                connStatusEl.innerText = "❌ 对方当前未在线，请确认对方网页已打开后重新连接";
+                connStatusEl.style.color = "#ff5252";
+                connBtn.disabled = false;
+                return;
+            }
+
+            console.error("PeerJS 异常:", err);
 
             if (err.type === 'unavailable-id') {
                 mySessionId = generateStandardUUID();
@@ -914,22 +964,15 @@
                 return;
             }
 
-            if (err.type === 'peer-unavailable') {
-                const target = targetIdEl.value.trim();
-                if (retryConnectCount < 2 && target) {
-                    retryConnectCount++;
-                    connStatusEl.innerText = `⏳ 正在穿透跨省中继节点探测对方(${retryConnectCount}/2)...`;
-                    connStatusEl.style.color = "#ff9800";
-                    setTimeout(() => connectToPeer(target, true), 1500);
-                    return;
-                }
-                retryConnectCount = 0;
-                connStatusEl.innerText = "❌ 对方当前未在线，请确认对方页面已打开";
-                connStatusEl.style.color = "#ff5252";
-            } else {
-                connStatusEl.innerText = "❌ 异常: " + err.type;
-                connStatusEl.style.color = "#ff5252";
+            if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+                connStatusEl.innerText = "⚠️ 信令服务器连接异常，正在自动重连...";
+                connStatusEl.style.color = "#ff9800";
+                setTimeout(() => initPeerEngine(), 2500);
+                return;
             }
+
+            connStatusEl.innerText = "❌ 异常: " + err.type;
+            connStatusEl.style.color = "#ff5252";
             connBtn.disabled = false;
         });
 
@@ -1001,20 +1044,51 @@
     };
 
     function connectToPeer(destId, isRetry = false) {
-        if (destId === mySessionId) return;
+        destId = (destId || "").trim();
+        if (!destId) return;
+
+        if (!peer || peer.destroyed) {
+            connStatusEl.innerText = "⏳ 配对信道正在重建，稍后自动重试...";
+            connStatusEl.style.color = "#ff9800";
+            setTimeout(() => connectToPeer(destId, isRetry), 1500);
+            return;
+        }
+
+        // 信道还没 open 时先排队，等 open 事件里再真正发起连接
+        if (!peer.open) {
+            pendingPeerTarget = destId;
+            connStatusEl.innerText = "⏳ 正在进入配对信道，就绪后自动连接对方...";
+            connStatusEl.style.color = "#ff9800";
+            return;
+        }
+
+        if (destId === mySessionId) {
+            connStatusEl.innerText = "⚠️ 这是你自己的配对码，请输入对方的配对码";
+            connStatusEl.style.color = "#ff9800";
+            return;
+        }
 
         if (!isRetry) closeExistingConnection();
         connBtn.disabled = true;
         connStatusEl.innerText = `⏳ 正在连接【${destId.substring(0, 8)}...】，请稍候...`;
         connStatusEl.style.color = "#ff9800";
 
-        conn = peer.connect(destId, { reliable: true });
-        bindConnEvents();
+        try {
+            conn = peer.connect(destId, { reliable: true });
+            bindConnEvents();
+        } catch (e) {
+            conn = null;
+            connBtn.disabled = false;
+            connStatusEl.innerText = "❌ 建立通道失败，请稍后重试";
+            connStatusEl.style.color = "#ff5252";
+            return;
+        }
 
+        if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
         connectTimeoutTimer = setTimeout(() => {
             if (!conn || !conn.open) {
                 closeExistingConnection();
-                connStatusEl.innerText = `⏳ 未能连通，对方可能退出了网页，待对方上线后会自动连通。`;
+                connStatusEl.innerText = "⏳ 未能连通，对方可能还没打开网页，稍后会自动重连。";
                 connStatusEl.style.color = "#ff9800";
                 connBtn.disabled = false;
             }
@@ -1024,13 +1098,15 @@
     if (autoTarget && autoTarget !== mySessionId) {
         sessionStorage.setItem('syncdrop_tab_last_target', autoTarget);
         targetIdEl.value = autoTarget;
-        setTimeout(() => connectToPeer(autoTarget), 1000);
+        pendingPeerTarget = autoTarget;
     }
 
     let incomingBatchCache = [];
 
     function bindConnEvents() {
         if (!conn) return;
+
+        const thisConn = conn;
 
         conn.on('open', () => {
             clearTimeout(connectTimeoutTimer);
@@ -1052,6 +1128,7 @@
         });
 
         conn.on('close', () => {
+            if (conn !== thisConn) return; // 已经切到新连接，忽略旧通道的关闭事件
             connStatusEl.innerText = "⚠️ 对方连接已断开，已安全保留所有进度与缓存，等待重连...";
             connStatusEl.style.color = "#ff9800";
             connBtn.disabled = false;
@@ -1069,20 +1146,34 @@
         conn.on('data', async (data) => {
             if (data.type === 'sync') {
                 isRemoteAction = true;
-                if (Math.abs(player.currentTime - data.time) > 0.45) {
-                    player.currentTime = data.time;
+                if (isOutchainAudioMode) {
+                    // 外链电台模式：只同步播放状态与虚拟进度
+                    if (data.action === 'play') {
+                        startOutchainPlayback(false);
+                    } else if (data.action === 'pause') {
+                        pauseOutchainPlayback(false);
+                    } else if (data.action === 'seek') {
+                        outchainCurrentSec = Math.max(0, Math.round(data.time || 0));
+                        currentTimeText.innerText = formatTime(outchainCurrentSec);
+                        musicProgress.value = Math.min(100, (outchainCurrentSec / outchainVirtualDuration) * 100);
+                    }
+                    setTimeout(() => { isRemoteAction = false; }, 250);
+                } else {
+                    if (Math.abs(player.currentTime - data.time) > 0.45) {
+                        player.currentTime = data.time;
+                    }
+                    if (data.action === 'play') {
+                        vinyl.style.animationPlayState = 'running';
+                        musicPlayBtn.innerText = "⏸";
+                        player.play().catch(() => { syncPlayOverlay.style.display = 'flex'; });
+                    }
+                    if (data.action === 'pause') {
+                        vinyl.style.animationPlayState = 'paused';
+                        musicPlayBtn.innerText = '▶';
+                        player.pause();
+                    }
+                    setTimeout(() => { isRemoteAction = false; }, 250);
                 }
-                if (data.action === 'play') {
-                    vinyl.style.animationPlayState = 'running';
-                    musicPlayBtn.innerText = "⏸";
-                    player.play().catch(() => { syncPlayOverlay.style.display = 'flex'; });
-                }
-                if (data.action === 'pause') {
-                    vinyl.style.animationPlayState = 'paused';
-                    musicPlayBtn.innerText = "▶";
-                    player.pause();
-                }
-                setTimeout(() => { isRemoteAction = false; }, 250);
             }
             else if (data.type === 'yt-sync') {
                 isRemoteAction = true;
@@ -1100,6 +1191,9 @@
                 isFileReadyToPlay = true;
                 if (data.mediaType === 'youtube') {
                     loadYouTubeVideo(data.url, false);
+                } else if (data.mediaType === 'outchain-dj') {
+                    // 对方在放网易云电台：本机也走官方外链通道，不能把网页地址丢给 <audio>
+                    applyOutchainDjAudio(data.url, data.title, data.pic, data.durationSec, false);
                 } else {
                     applyMediaSource(data.url, data.isAudio, data.title, data.pic);
                 }
@@ -1595,6 +1689,13 @@
         musicView.style.display = 'none';
         ytPlayerContainer.style.display = 'none';
 
+        // 外链直播源控制不了播放器，锁掉进度条，避免“拖了没反应”的假象
+        const lockOutchainSeek = (mode === 'audio' && isOutchainAudioMode);
+        musicProgress.disabled = lockOutchainSeek;
+        musicProgress.style.opacity = lockOutchainSeek ? '0.4' : '';
+        musicProgress.style.cursor = lockOutchainSeek ? 'not-allowed' : '';
+        musicProgress.title = lockOutchainSeek ? '外链直播源由网易云播放器发声，进度不可拖动' : '';
+
         if (mode === 'youtube') {
             ytPlayerContainer.style.display = 'block';
         } else if (mode === 'audio') {
@@ -1993,14 +2094,25 @@
             connStatusEl.innerText = `🔍 正在解析网易云${isDjProgram ? '电台播客' : '单曲'}...`;
 
             if (isDjProgram) {
-                // 终极绝招：直接启用官方外链保底发声通道，100% 能够播放出声音，且绝不报错！
-                let outchainUrl = text;
-                if (!outchainUrl.startsWith('http')) outchainUrl = 'https://' + outchainUrl;
-                if (!outchainUrl.includes('auto=')) outchainUrl += (outchainUrl.includes('?') ? '&' : '?') + 'auto=1&height=66';
-
+                // 配置了解析服务就换成原生音频：可暂停续播、可拖动、两端进度才真同步
+                if (NETEASE_RESOLVER) {
+                    connStatusEl.innerText = "🔍 正在解析电台节目的音频地址...";
+                    const resolved = await resolveNeteaseProgram(id);
+                    if (resolved && resolved.songId) {
+                        return {
+                            type: 'direct',
+                            finalUrl: `https://music.163.com/song/media/outer/url?id=${resolved.songId}.mp3`,
+                            isAudio: true,
+                            title: resolved.name || `网易云电台播客 (${id})`,
+                            pic: resolved.cover || '',
+                            durationSec: resolved.duration
+                        };
+                    }
+                }
+                // 兜底：官方外链播放器（声音没问题，但父页面控制不了它的暂停与进度）
                 return {
                     type: 'outchain-dj',
-                    url: outchainUrl,
+                    url: text,
                     title: `网易云电台播客 (${id})`,
                     pic: '',
                     durationSec: 1800
@@ -2075,68 +2187,158 @@
         };
     }
 
+    // ==============================================================
+    // 官方外链保底发声引擎（网易云电台 / 播客）
+    // 外链播放器只能在隐藏 iframe 里出声，<audio> 解不了网页地址，
+    // 因此进度条由“虚拟计时器”驱动：暂停后重播会从头开始。
+    // ==============================================================
+    function buildNeteaseOutchainUrl(rawUrl) {
+        let url = (rawUrl || "").trim();
+        if (!url) return "";
+        if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+
+        // 已经是官方外链播放器，只补参数
+        if (url.includes("music.163.com/outchain/player")) {
+            if (!/[?&]auto=/.test(url)) url += (url.includes("?") ? "&" : "?") + "auto=1&height=66";
+            return url;
+        }
+
+        const idMatch = url.match(/[?&#]id=(\d+)/) || url.match(/id=(\d+)/);
+        if (!idMatch) return "";
+
+        // 单曲 / 歌单 / 专辑 / 电台节目 → 统一转成官方 outchain 播放器
+        let type = "2";
+        if (/type=3|program|\/dj|radio/i.test(url)) type = "3";
+        else if (/playlist/i.test(url)) type = "0";
+        else if (/album/i.test(url)) type = "1";
+        return `https://music.163.com/outchain/player?type=${type}&id=${idMatch[1]}&auto=1&height=66`;
+    }
+
+    // 通过自建解析服务拿到电台节目的 mainSong.id，换成可原生播放的音频
+    async function resolveNeteaseProgram(programId) {
+        if (!NETEASE_RESOLVER) return null;
+        try {
+            const res = await fetch(NETEASE_RESOLVER + "?id=" + encodeURIComponent(programId), { cache: "no-store" });
+            if (!res.ok) return null;
+            const data = await res.json();
+            const songId = data && (data.songId || (data.program && data.program.mainSong && data.program.mainSong.id));
+            if (!songId) return null;
+            return {
+                songId: String(songId),
+                name: data.name || "",
+                cover: data.cover || "",
+                duration: Number(data.duration) || 0
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function stopOutchainTicker() {
+        if (outchainTickerTimer) { clearInterval(outchainTickerTimer); outchainTickerTimer = null; }
+    }
+
+    function startOutchainTicker() {
+        stopOutchainTicker();
+        outchainTickerTimer = setInterval(() => {
+            if (outchainCurrentSec >= outchainVirtualDuration) {
+                stopOutchainTicker();
+                vinyl.style.animationPlayState = 'paused';
+                musicPlayBtn.innerText = '▶';
+                connStatusEl.innerText = "📻 本段外链播放结束，可重新解析或换一段";
+                connStatusEl.style.color = "#ff9800";
+                return;
+            }
+            outchainCurrentSec++;
+            currentTimeText.innerText = formatTime(outchainCurrentSec);
+            musicProgress.value = Math.min(100, (outchainCurrentSec / outchainVirtualDuration) * 100);
+        }, 1000);
+    }
+
     // 激活网易云官方隐形外链保底通道
     function applyOutchainDjAudio(url, title, pic, durationSec, broadcast = true) {
-        setUIMode('audio', title, pic);
+        const playUrl = buildNeteaseOutchainUrl(url);
+        if (!playUrl) {
+            connStatusEl.innerText = "❌ 未能识别该链接，请粘贴网易云单曲 / 歌单 / 电台节目地址";
+            connStatusEl.style.color = "#ff5252";
+            return false;
+        }
+
+        // 先置位再切 UI：setUIMode 会据此锁定进度条
         isOutchainAudioMode = true;
-        outchainVirtualDuration = durationSec || 1800;
+        outchainVirtualDuration = Math.max(60, Number(durationSec) || 1800);
+        outchainCurrentSec = 0;
+        outchainActiveUrl = playUrl;
+
+        setUIMode('audio', title || "网易云外链音频", pic || '');
+
         durationText.innerText = formatTime(outchainVirtualDuration);
+        currentTimeText.innerText = "00:00";
+        musicProgress.value = 0;
 
         startOutchainPlayback(broadcast);
 
-        connStatusEl.innerText = "📻 网易云电台播客已就绪，黑胶唱机正在同步播放！";
+        connStatusEl.innerText = "📻 外链直播源已就绪（声音由网易云播放器发出，暂停即停止、无法续播）";
         connStatusEl.style.color = "#00c853";
 
         if (broadcast && conn && conn.open) {
             conn.send({
                 type: 'load-url',
                 mediaType: 'outchain-dj',
-                url: url,
+                url: playUrl,
                 title: currentRawMediaTitle,
-                pic: pic,
+                pic: pic || '',
                 durationSec: outchainVirtualDuration
             });
         }
+        return true;
     }
 
     function startOutchainPlayback(broadcast = true) {
-        vinyl.style.animationPlayState = 'running';
-        musicPlayBtn.innerText = "⏸";
-
-        let targetUrl = musicUrlInput.value.trim();
-        if (!targetUrl) targetUrl = hiddenOutchainFrame.src;
-        if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
-        if (!targetUrl.includes('auto=')) targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'auto=1&height=66';
-        
-        if (hiddenOutchainFrame.src !== targetUrl) {
-            hiddenOutchainFrame.src = targetUrl;
+        if (!outchainActiveUrl) {
+            connStatusEl.innerText = "⚠️ 还没有外链音源，请先粘贴网易云链接再点解析";
+            connStatusEl.style.color = "#ff9800";
+            return;
         }
 
-        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
-        outchainTickerTimer = setInterval(() => {
-            if (outchainCurrentSec < outchainVirtualDuration) {
-                outchainCurrentSec++;
-                currentTimeText.innerText = formatTime(outchainCurrentSec);
-                musicProgress.value = (outchainCurrentSec / outchainVirtualDuration) * 100;
+        vinyl.style.animationPlayState = 'running';
+        musicPlayBtn.innerText = '⏸';
+
+        // 已在播放就只补状态，不要重载 iframe
+        if (!outchainTickerTimer) {
+            const wasStopped = outchainCurrentSec > 0;
+            outchainCurrentSec = 0;
+            currentTimeText.innerText = "00:00";
+            musicProgress.value = 0;
+            hiddenOutchainFrame.src = outchainActiveUrl;
+            startOutchainTicker();
+
+            // 外链播放器不接受外部 seek，只能从头播；如实提示，别让用户以为是 bug
+            if (wasStopped) {
+                connStatusEl.innerText = "📻 外链直播源不支持续播，已从头开始（换成原生音源即可暂停续播）";
+                connStatusEl.style.color = "#ff9800";
             }
-        }, 1000);
+        }
 
         if (broadcast) sendSync('play');
     }
 
     function pauseOutchainPlayback(broadcast = true) {
         vinyl.style.animationPlayState = 'paused';
-        musicPlayBtn.innerText = "▶";
-        hiddenOutchainFrame.src = ""; // 暂停发声
-        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
+        musicPlayBtn.innerText = '▶';
+        stopOutchainTicker();
+        // 注意：src = "" 会让 iframe 重新加载当前页面，必须用 about:blank
+        hiddenOutchainFrame.src = "about:blank";
 
         if (broadcast) sendSync('pause');
     }
 
     function applyMediaSource(finalUrl, isAudio, title, pic) {
-        if (outchainTickerTimer) clearInterval(outchainTickerTimer);
+        stopOutchainTicker();
         isOutchainAudioMode = false;
-        hiddenOutchainFrame.src = "";
+        outchainActiveUrl = "";
+        outchainCurrentSec = 0;
+        hiddenOutchainFrame.src = "about:blank";
 
         setUIMode(isAudio ? 'audio' : 'video', title, pic);
         activeMediaStreamUrl = finalUrl;
@@ -2256,7 +2458,7 @@
 
     musicPlayBtn.onclick = () => {
         if (isOutchainAudioMode) {
-            if (vinyl.style.animationPlayState === 'running') {
+            if (outchainTickerTimer) {
                 pauseOutchainPlayback(true);
             } else {
                 startOutchainPlayback(true);
@@ -2349,7 +2551,7 @@
             conn.send({
                 type: 'sync',
                 action: action,
-                time: player.currentTime || outchainCurrentSec || 0
+                time: isOutchainAudioMode ? outchainCurrentSec : (player.currentTime || 0)
             });
         }
     }
